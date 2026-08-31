@@ -1,0 +1,235 @@
+//
+//  CameraView.swift
+//  CameraApp
+//
+//  The camera screen: preview edge to edge, everything else floating on top.
+//
+
+import AVFoundation
+import SwiftUI
+
+struct CameraView: View {
+
+    let model: CameraModel
+
+    /// Size of the preview surface itself — measured after safe areas are
+    /// ignored, so it matches the AVCaptureVideoPreviewLayer's own bounds.
+    @State private var previewSize: CGSize = .zero
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            switch model.status {
+            case .cameraAccessDenied:
+                PermissionView(
+                    symbolName: "camera.fill",
+                    title: "Camera access is off",
+                    message: "CameraApp needs the camera to frame and take photos. You can turn it on in Settings."
+                )
+            case .failed(let description):
+                CameraUnavailableView(message: description) {
+                    Task { await model.start() }
+                }
+            default:
+                cameraInterface
+            }
+
+            if let review = model.review {
+                PhotoReviewView(
+                    review: review,
+                    isSaving: model.isSaving,
+                    isPhotoAccessDenied: model.isPhotoAccessDenied,
+                    onRetake: { model.retakePhoto() },
+                    onSave: { model.saveReviewedPhoto() }
+                )
+                .transition(.opacity)
+                .zIndex(2)
+            }
+        }
+        .animation(.easeInOut(duration: 0.22), value: model.isReviewing)
+        .statusBarHidden(true)
+        .persistentSystemOverlays(.hidden)
+        .task { await model.start() }
+    }
+
+    // MARK: - Camera interface
+
+    private var cameraInterface: some View {
+        ZStack {
+            previewSurface
+
+            Color.white
+                .ignoresSafeArea()
+                .opacity(model.shutterFlashOpacity)
+                .allowsHitTesting(false)
+
+            VStack(spacing: 0) {
+                topBar
+                    .padding(.horizontal, 20)
+                    .padding(.top, 4)
+
+                GuidanceBanner(state: model.guidance, rotation: model.orientation.controlRotation)
+                    .padding(.top, 18)
+
+                Spacer(minLength: 0)
+
+                if let message = model.message {
+                    MessageToast(text: message)
+                        .padding(.bottom, 14)
+                }
+
+                bottomControls
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
+            }
+            .animation(.easeInOut(duration: 0.2), value: model.message)
+        }
+    }
+
+    private var previewSurface: some View {
+        let geometry = PreviewGeometry(
+            viewSize: previewSize,
+            contentAspectRatio: model.configuration.contentAspectRatio
+        )
+
+        return ZStack {
+            CameraPreview(session: model.session, controller: model.previewController)
+                .opacity(model.isSwitchingCamera ? 0 : 1)
+                .animation(.easeInOut(duration: 0.18), value: model.isSwitchingCamera)
+
+            if model.isGridVisible {
+                RuleOfThirdsGrid()
+                    .transition(.opacity)
+            }
+
+            SubjectOverlay(
+                faces: model.faces,
+                geometry: geometry,
+                isReady: model.guidance?.isReady == true
+            )
+
+            if let focus = model.focusIndicator {
+                FocusIndicatorView()
+                    .position(focus.point)
+                    .id(focus.id)
+                    .transition(.opacity)
+            }
+        }
+        .ignoresSafeArea()
+        .background {
+            // Applied after `ignoresSafeArea`, so this reports the expanded,
+            // full-screen frame the preview layer actually occupies.
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { previewSize = proxy.size }
+                    .onChange(of: proxy.size) { _, newValue in previewSize = newValue }
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(count: 1, coordinateSpace: .local) { location in
+            model.focus(at: location)
+        }
+        .gesture(
+            MagnifyGesture()
+                .onChanged { value in model.updatePinchZoom(scale: value.magnification) }
+                .onEnded { _ in model.endPinchZoom() }
+        )
+        .animation(.easeInOut(duration: 0.2), value: model.isGridVisible)
+    }
+
+    // MARK: - Controls
+
+    private var topBar: some View {
+        HStack(spacing: 12) {
+            GlassCircleButton(
+                systemImage: model.flashMode.symbolName,
+                accessibilityLabel: model.flashMode.accessibilityLabel,
+                isHighlighted: model.flashMode == .on,
+                rotation: model.orientation.controlRotation
+            ) {
+                model.toggleFlashMode()
+            }
+            .opacity(model.configuration.isFlashAvailable ? 1 : 0.35)
+            .disabled(!model.configuration.isFlashAvailable)
+
+            Spacer(minLength: 0)
+
+            GlassCircleButton(
+                systemImage: "grid",
+                accessibilityLabel: model.isGridVisible ? "Hide grid" : "Show grid",
+                isHighlighted: model.isGridVisible,
+                rotation: model.orientation.controlRotation
+            ) {
+                model.toggleGrid()
+            }
+        }
+    }
+
+    private var bottomControls: some View {
+        VStack(spacing: 20) {
+            if model.configuration.zoom.displayOptions.count > 1 {
+                ZoomSelector(
+                    options: model.configuration.zoom.displayOptions,
+                    currentZoom: model.selectedZoom,
+                    rotation: model.orientation.controlRotation,
+                    onSelect: { model.setZoom(displayFactor: $0) }
+                )
+            }
+
+            ZStack {
+                ShutterButton(
+                    isReady: model.guidance?.isReady == true,
+                    isBusy: model.isCapturing,
+                    isEnabled: model.status.isRunning && !model.isInterrupted
+                ) {
+                    model.capturePhoto()
+                }
+
+                HStack {
+                    Spacer()
+                    GlassCircleButton(
+                        systemImage: "arrow.triangle.2.circlepath",
+                        accessibilityLabel: "Switch camera",
+                        diameter: 48,
+                        rotation: model.orientation.controlRotation
+                    ) {
+                        model.switchCamera()
+                    }
+                    .disabled(model.isSwitchingCamera || model.isCapturing)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Failure state
+
+struct CameraUnavailableView: View {
+
+    let message: String
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 34, weight: .light))
+                .foregroundStyle(.white.opacity(0.85))
+            Text("The camera is unavailable")
+                .font(.system(size: 19, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white)
+            Text(message)
+                .font(.system(size: 14))
+                .foregroundStyle(.white.opacity(0.65))
+                .multilineTextAlignment(.center)
+            Button("Try Again", action: onRetry)
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundStyle(.black)
+                .padding(.horizontal, 22)
+                .padding(.vertical, 11)
+                .background(Capsule().fill(Color.white))
+                .padding(.top, 4)
+        }
+        .padding(32)
+    }
+}

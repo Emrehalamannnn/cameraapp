@@ -1,0 +1,505 @@
+//
+//  CameraModel.swift
+//  CameraApp
+//
+//  The single source of truth for the camera screen.
+//
+//  It owns UI state and orchestrates three services that know nothing about
+//  each other: `CaptureService` (AVCaptureSession), `FrameAnalysisService`
+//  (Vision + signal processing) and `MediaLibraryService` (PhotoKit). All of
+//  its state is main-actor isolated; every service call is an `await` away.
+//
+
+import AVFoundation
+import Foundation
+import Observation
+import Photos
+import QuartzCore
+import SwiftUI
+import UIKit
+
+@MainActor
+@Observable
+final class CameraModel {
+
+    // MARK: - Nested state
+
+    enum Status: Equatable {
+        case idle
+        case starting
+        case running
+        case cameraAccessDenied
+        case failed(String)
+
+        var isRunning: Bool { self == .running }
+    }
+
+    struct PhotoReview: Identifiable, Equatable {
+        let id = UUID()
+        let photo: CapturedPhoto
+        let image: UIImage?
+
+        static func == (lhs: PhotoReview, rhs: PhotoReview) -> Bool { lhs.id == rhs.id }
+    }
+
+    struct FocusIndicator: Identifiable, Equatable {
+        let id = UUID()
+        let point: CGPoint
+    }
+
+    // MARK: - Observable state
+
+    private(set) var status: Status = .idle
+    /// The one instruction currently on screen. `nil` before the first is earned.
+    private(set) var guidance: GuidanceState?
+    private(set) var faces: [DetectedFace] = []
+    private(set) var configuration: CameraConfiguration = .unknown
+    private(set) var selectedZoom: Double = 1
+    private(set) var flashMode: FlashMode = .auto
+    private(set) var isGridVisible = true
+    private(set) var isCapturing = false
+    private(set) var isSwitchingCamera = false
+    private(set) var isSaving = false
+    private(set) var isInterrupted = false
+    private(set) var review: PhotoReview?
+    private(set) var focusIndicator: FocusIndicator?
+    private(set) var shutterFlashOpacity: Double = 0
+    private(set) var message: String?
+    private(set) var isPhotoAccessDenied = false
+
+    var isReviewing: Bool { review != nil }
+
+    // MARK: - Collaborators
+
+    @ObservationIgnored let previewController = PreviewController()
+    @ObservationIgnored let orientation = DeviceOrientationObserver()
+
+    @ObservationIgnored private let analysisService: FrameAnalysisService
+    @ObservationIgnored private let captureService: CaptureService
+    @ObservationIgnored private let mediaLibrary = MediaLibraryService()
+
+    @ObservationIgnored private var guidanceEngine = GuidanceEngine()
+    @ObservationIgnored private var analysisTask: Task<Void, Never>?
+    @ObservationIgnored private var observationTasks: [Task<Void, Never>] = []
+    @ObservationIgnored private var messageTask: Task<Void, Never>?
+    @ObservationIgnored private var focusTask: Task<Void, Never>?
+    @ObservationIgnored private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
+    @ObservationIgnored private var rotationObservers: [NSKeyValueObservation] = []
+    @ObservationIgnored private var pinchBaseZoom: Double?
+
+    var session: AVCaptureSession { captureService.session }
+
+    init() {
+        let analysis = FrameAnalysisService()
+        analysisService = analysis
+        captureService = CaptureService(analyzer: analysis)
+        previewController.onAttach = { [weak self] in
+            guard let self else { return }
+            Task { await self.refreshRotationCoordinator() }
+        }
+    }
+
+    // MARK: - Lifecycle
+
+    /// Entry point for the camera screen. Safe to call repeatedly.
+    func start() async {
+        guard status == .idle || status == .cameraAccessDenied || isFailed else { return }
+        status = .starting
+
+        let access = await CameraPermission.requestAccess()
+        guard access == .granted else {
+            status = .cameraAccessDenied
+            return
+        }
+
+        do {
+            let configuration = try await captureService.start()
+            apply(configuration)
+            status = .running
+            orientation.start()
+            Haptics.shared.prepare()
+            await analysisService.start()
+            startConsumingAnalyses()
+            startObservingSessionEvents()
+            await refreshRotationCoordinator()
+        } catch {
+            status = .failed(error.localizedDescription)
+        }
+    }
+
+    /// Called when the app returns to the foreground.
+    func resume() async {
+        switch status {
+        case .cameraAccessDenied where CameraPermission.access == .granted:
+            status = .idle
+            await start()
+        case .idle, .cameraAccessDenied:
+            await start()
+        case .running:
+            guidanceEngine.reset()
+            guidance = nil
+            orientation.start()
+            await analysisService.start()
+            startConsumingAnalyses()
+            do {
+                let configuration = try await captureService.start()
+                apply(configuration)
+                await captureService.setAnalysisEnabled(!isReviewing)
+                await refreshRotationCoordinator()
+            } catch {
+                status = .failed(error.localizedDescription)
+            }
+        case .starting, .failed:
+            break
+        }
+    }
+
+    /// Called when the app is backgrounded: the session is released so the
+    /// camera is not held while another app may need it.
+    func suspend() async {
+        orientation.stop()
+        // The analysis consumer is deliberately left running: an AsyncStream is
+        // single-shot, and cancelling its consumer would tear the pipeline down
+        // for good. With the analyser stopped it simply parks until frames
+        // start flowing again.
+        await analysisService.stop()
+        await captureService.stop()
+        guidance = nil
+        faces = []
+        guidanceEngine.reset()
+    }
+
+    // MARK: - Controls
+
+    func toggleFlashMode() {
+        flashMode = flashMode.next
+        Haptics.shared.selectionSignal()
+    }
+
+    func toggleGrid() {
+        isGridVisible.toggle()
+        Haptics.shared.selectionSignal()
+    }
+
+    func switchCamera() {
+        guard status.isRunning, !isSwitchingCamera, !isCapturing else { return }
+        isSwitchingCamera = true
+        Haptics.shared.selectionSignal()
+        faces = []
+        guidance = nil
+        guidanceEngine.reset()
+
+        Task {
+            defer { isSwitchingCamera = false }
+            do {
+                let configuration = try await captureService.switchCamera()
+                apply(configuration)
+                await refreshRotationCoordinator()
+            } catch {
+                present(message: "Could not switch camera")
+            }
+        }
+    }
+
+    func setZoom(displayFactor: Double, ramp: Bool = true, feedback: Bool = true) {
+        guard status.isRunning else { return }
+        let capabilities = configuration.zoom
+        let clamped = min(
+            max(displayFactor, capabilities.minimumDisplayFactor),
+            capabilities.maximumDisplayFactor
+        )
+        guard abs(clamped - selectedZoom) > 0.001 || ramp else { return }
+        selectedZoom = clamped
+        if feedback { Haptics.shared.selectionSignal() }
+
+        Task {
+            let applied = await captureService.applyZoom(displayFactor: clamped, ramp: ramp)
+            if abs(applied - selectedZoom) > 0.001 {
+                selectedZoom = applied
+            }
+        }
+    }
+
+    func updatePinchZoom(scale: CGFloat) {
+        guard status.isRunning else { return }
+        let base = pinchBaseZoom ?? selectedZoom
+        pinchBaseZoom = base
+        setZoom(displayFactor: base * Double(scale), ramp: false, feedback: false)
+    }
+
+    func endPinchZoom() {
+        pinchBaseZoom = nil
+    }
+
+    func focus(at point: CGPoint) {
+        guard status.isRunning, let devicePoint = previewController.devicePoint(for: point) else { return }
+
+        let indicator = FocusIndicator(point: point)
+        focusIndicator = indicator
+        Haptics.shared.selectionSignal()
+
+        Task { await captureService.focus(at: devicePoint, isUserInitiated: true) }
+
+        focusTask?.cancel()
+        focusTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.2))
+            guard !Task.isCancelled, let self, self.focusIndicator?.id == indicator.id else { return }
+            self.focusIndicator = nil
+        }
+    }
+
+    // MARK: - Capture
+
+    func capturePhoto() {
+        guard status.isRunning, !isCapturing, !isReviewing else { return }
+        isCapturing = true
+        Haptics.shared.shutterSignal()
+        playShutterFlash()
+
+        Task {
+            defer { isCapturing = false }
+            do {
+                let photo = try await captureService.capturePhoto(flashMode: flashMode)
+                // The preview stays live behind the review screen, but there is
+                // nothing to guide while the shot is being judged.
+                await captureService.setAnalysisEnabled(false)
+                let image = await photo.makePreviewImage(maxDimension: 2200)
+                guidance = nil
+                faces = []
+                guidanceEngine.reset()
+                review = PhotoReview(photo: photo, image: image)
+            } catch {
+                present(message: error.localizedDescription)
+            }
+        }
+    }
+
+    func retakePhoto() {
+        review = nil
+        isPhotoAccessDenied = false
+        Task { await captureService.setAnalysisEnabled(true) }
+    }
+
+    func saveReviewedPhoto() {
+        guard let review, !isSaving else { return }
+        isSaving = true
+
+        Task {
+            defer { isSaving = false }
+            let authorization = await mediaLibrary.requestAuthorization()
+            guard MediaLibraryService.isUsable(authorization) else {
+                isPhotoAccessDenied = true
+                return
+            }
+            do {
+                try await mediaLibrary.save(review.photo)
+                self.review = nil
+                isPhotoAccessDenied = false
+                await captureService.setAnalysisEnabled(true)
+                present(message: "Saved to Photos")
+            } catch {
+                present(message: error.localizedDescription)
+            }
+        }
+    }
+
+    // MARK: - Analysis
+
+    private func startConsumingAnalyses() {
+        guard analysisTask == nil else { return }
+        let analyses = analysisService.analyses
+        analysisTask = Task { [weak self] in
+            for await analysis in analyses {
+                guard !Task.isCancelled, let self else { return }
+                self.handle(analysis)
+            }
+        }
+    }
+
+    private func handle(_ analysis: FrameAnalysis) {
+        guard !isReviewing else { return }
+
+        if faces != analysis.faces {
+            faces = analysis.faces
+        }
+
+        let update = guidanceEngine.update(with: analysis, now: CACurrentMediaTime())
+        if guidance != update.state {
+            guidance = update.state
+        }
+        if update.didBecomeReady {
+            Haptics.shared.readySignal()
+        }
+    }
+
+    // MARK: - Session events
+
+    private func startObservingSessionEvents() {
+        guard observationTasks.isEmpty else { return }
+        let session = captureService.session
+        let center = NotificationCenter.default
+
+        observationTasks.append(
+            Task { [weak self] in
+                for await notification in center.notifications(
+                    named: AVCaptureSession.wasInterruptedNotification,
+                    object: session
+                ) {
+                    guard let self else { return }
+                    self.handleInterruption(notification)
+                }
+            }
+        )
+
+        observationTasks.append(
+            Task { [weak self] in
+                for await _ in center.notifications(
+                    named: AVCaptureSession.interruptionEndedNotification,
+                    object: session
+                ) {
+                    guard let self else { return }
+                    self.isInterrupted = false
+                    await self.captureService.setAnalysisEnabled(!self.isReviewing)
+                }
+            }
+        )
+
+        observationTasks.append(
+            Task { [weak self] in
+                for await notification in center.notifications(
+                    named: AVCaptureSession.runtimeErrorNotification,
+                    object: session
+                ) {
+                    guard let self else { return }
+                    await self.handleRuntimeError(notification)
+                }
+            }
+        )
+
+        observationTasks.append(
+            Task { [weak self] in
+                for await _ in center.notifications(
+                    named: AVCaptureDevice.subjectAreaDidChangeNotification
+                ) {
+                    guard let self else { return }
+                    await self.captureService.resetFocusAndExposure()
+                }
+            }
+        )
+    }
+
+    private func handleInterruption(_ notification: Notification) {
+        isInterrupted = true
+        guidance = nil
+        faces = []
+        guidanceEngine.reset()
+
+        let rawReason = notification.userInfo?[AVCaptureSessionInterruptionReasonKey] as? Int
+        let reason = rawReason.flatMap(AVCaptureSession.InterruptionReason.init(rawValue:))
+        switch reason {
+        case .videoDeviceNotAvailableInBackground:
+            break // Expected while backgrounded; nothing worth saying.
+        case .audioDeviceInUseByAnotherClient, .videoDeviceInUseByAnotherClient:
+            present(message: "Camera in use by another app")
+        case .videoDeviceNotAvailableWithMultipleForegroundApps:
+            present(message: "Camera paused in Split View")
+        case .videoDeviceNotAvailableDueToSystemPressure:
+            present(message: "Camera paused to cool down")
+        default:
+            break
+        }
+    }
+
+    private func handleRuntimeError(_ notification: Notification) async {
+        let error = notification.userInfo?[AVCaptureSessionErrorKey] as? AVError
+        // A media services reset invalidates the session; restarting is the
+        // documented recovery.
+        if error?.code == .mediaServicesWereReset {
+            do {
+                let configuration = try await captureService.start()
+                apply(configuration)
+                await refreshRotationCoordinator()
+                return
+            } catch {
+                status = .failed(error.localizedDescription)
+                return
+            }
+        }
+        present(message: error?.localizedDescription ?? "The camera stopped unexpectedly")
+    }
+
+    // MARK: - Rotation
+
+    /// Rebuilds the rotation coordinator for the active device. The coordinator
+    /// reports two angles: one that keeps the preview upright, and one that
+    /// keeps captured photos horizon-level regardless of how the phone is held.
+    private func refreshRotationCoordinator() async {
+        guard let device = await captureService.currentDevice else { return }
+
+        rotationObservers.removeAll()
+        let coordinator = AVCaptureDevice.RotationCoordinator(
+            device: device,
+            previewLayer: previewController.previewLayer
+        )
+        rotationCoordinator = coordinator
+
+        applyPreviewRotation(coordinator.videoRotationAngleForHorizonLevelPreview)
+        await captureService.setCaptureRotationAngle(coordinator.videoRotationAngleForHorizonLevelCapture)
+
+        rotationObservers.append(
+            coordinator.observe(\.videoRotationAngleForHorizonLevelPreview, options: .new) { [weak self] _, change in
+                guard let angle = change.newValue else { return }
+                Task { @MainActor in
+                    self?.applyPreviewRotation(angle)
+                }
+            }
+        )
+        rotationObservers.append(
+            coordinator.observe(\.videoRotationAngleForHorizonLevelCapture, options: .new) { [weak self] _, change in
+                guard let angle = change.newValue else { return }
+                Task { @MainActor in
+                    await self?.captureService.setCaptureRotationAngle(angle)
+                }
+            }
+        )
+    }
+
+    private func applyPreviewRotation(_ angle: CGFloat) {
+        previewController.setRotationAngle(angle)
+        Task { await captureService.setPreviewRotationAngle(angle) }
+    }
+
+    // MARK: - Helpers
+
+    private var isFailed: Bool {
+        if case .failed = status { return true }
+        return false
+    }
+
+    private func apply(_ configuration: CameraConfiguration) {
+        self.configuration = configuration
+        selectedZoom = configuration.currentDisplayZoom
+    }
+
+    private func playShutterFlash() {
+        withAnimation(.easeOut(duration: 0.06)) {
+            shutterFlashOpacity = 1
+        }
+        Task {
+            try? await Task.sleep(for: .milliseconds(70))
+            withAnimation(.easeIn(duration: 0.22)) {
+                shutterFlashOpacity = 0
+            }
+        }
+    }
+
+    private func present(message text: String) {
+        message = text
+        messageTask?.cancel()
+        messageTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled else { return }
+            self?.message = nil
+        }
+    }
+}
