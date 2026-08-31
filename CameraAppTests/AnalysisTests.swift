@@ -79,7 +79,7 @@ final class CompositionEvaluatorTests: XCTestCase {
 
     func testInsufficientHeadroomAsksForVerticalCorrection() {
         let assessment = CompositionEvaluator.evaluate(
-            faces: [face(centerX: 0.5, centerY: 0.92, height: 0.1)],
+            faces: [face(centerX: 0.5, centerY: 0.89, height: 0.16)],
             isMirrored: false
         )
         XCTAssertEqual(assessment.state, .insufficientHeadroom)

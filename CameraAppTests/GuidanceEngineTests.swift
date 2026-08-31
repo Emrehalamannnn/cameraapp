@@ -66,7 +66,7 @@ final class GuidanceEngineTests: XCTestCase {
             faces: [face(centerX: 0.5, centerY: 0.18, height: 0.2)]
         )
         let insufficient = makeAnalysis(
-            faces: [face(centerX: 0.5, centerY: 0.92, height: 0.1)]
+            faces: [face(centerX: 0.5, centerY: 0.89, height: 0.16)]
         )
         XCTAssertEqual(GuidanceEngine.target(for: excessive), .lowerCamera)
         XCTAssertEqual(GuidanceEngine.target(for: insufficient), .raiseCamera)
