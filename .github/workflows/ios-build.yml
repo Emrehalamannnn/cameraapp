@@ -1,0 +1,87 @@
+name: iOS Build
+
+on:
+  push:
+    branches:
+      - "claude/**"
+      - "main"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Xcode simulator build
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          echo "--- installed Xcodes ---"
+          ls -d /Applications/Xcode*.app || true
+          echo "--- selected ---"
+          xcode-select -p
+          xcodebuild -version
+          swift --version
+          echo "--- SDKs ---"
+          xcodebuild -showsdks | sed -n '1,40p'
+
+      - name: List schemes and targets
+        run: xcodebuild -list -project CameraApp.xcodeproj
+
+      - name: Build app target (Debug, iOS Simulator)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project CameraApp.xcodeproj \
+            -scheme CameraApp \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee build.log
+
+      - name: Build diagnostics
+        if: always()
+        run: |
+          echo "=== errors ==="
+          grep -E "error:" build.log | sort -u | head -100 || echo "(none)"
+          echo "=== warnings ==="
+          grep -E "warning:" build.log | sort -u | head -100 || echo "(none)"
+
+      - name: Choose an iPhone simulator
+        id: simulator
+        run: |
+          echo "--- available devices ---"
+          xcrun simctl list devices available
+          UDID=$(xcrun simctl list devices available | grep "iPhone" | grep -oE "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}" | tail -1)
+          if [ -z "$UDID" ]; then
+            echo "No iPhone simulator available on this runner" >&2
+            exit 1
+          fi
+          echo "Selected simulator: $UDID"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+
+      - name: Build and run unit tests
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project CameraApp.xcodeproj \
+            -scheme CameraApp \
+            -configuration Debug \
+            -destination "id=${{ steps.simulator.outputs.udid }}" \
+            CODE_SIGNING_ALLOWED=NO \
+            test 2>&1 | tee test.log
+
+      - name: Test diagnostics
+        if: always()
+        run: |
+          echo "=== errors ==="
+          grep -E "error:" test.log | sort -u | head -100 || echo "(none)"
+          echo "=== results ==="
+          grep -E "Test Case .*(passed|failed)|Executed [0-9]+ test|TEST (SUCCEEDED|FAILED)" test.log | tail -80 || echo "(none)"
