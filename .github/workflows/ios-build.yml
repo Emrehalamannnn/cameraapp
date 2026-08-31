@@ -26,13 +26,13 @@ jobs:
           ls -d /Applications/Xcode*.app || true
           echo "--- selected ---"
           xcode-select -p
-          xcodebuild -version
-          swift --version
+          xcodebuild -version | tee toolchain.txt
+          swift --version | tee -a toolchain.txt
           echo "--- SDKs ---"
-          xcodebuild -showsdks | sed -n '1,40p'
+          xcodebuild -showsdks | grep -i "iOS" | tee -a toolchain.txt
 
       - name: List schemes and targets
-        run: xcodebuild -list -project CameraApp.xcodeproj
+        run: xcodebuild -list -project CameraApp.xcodeproj | tee schemes.txt
 
       - name: Build app target (Debug, iOS Simulator)
         run: |
@@ -85,3 +85,28 @@ jobs:
           grep -E "error:" test.log | sort -u | head -100 || echo "(none)"
           echo "=== results ==="
           grep -E "Test Case .*(passed|failed)|Executed [0-9]+ test|TEST (SUCCEEDED|FAILED)" test.log | tail -80 || echo "(none)"
+
+      - name: Compile report
+        if: always()
+        run: |
+          {
+            echo "## Toolchain"
+            echo '```'
+            cat toolchain.txt 2>/dev/null || echo "(not captured)"
+            echo '```'
+            echo "## Schemes and targets"
+            echo '```'
+            cat schemes.txt 2>/dev/null || echo "(not captured)"
+            echo '```'
+            echo "## Unique warnings"
+            echo '```'
+            cat build.log test.log 2>/dev/null \
+              | grep -E "warning:" \
+              | sed -E 's/^.*(warning:)/\1/' \
+              | sort | uniq -c | sort -rn | head -60 || echo "(none)"
+            echo '```'
+            echo "## Test totals"
+            echo '```'
+            grep -E "Executed [0-9]+ tests|TEST (SUCCEEDED|FAILED)|BUILD (SUCCEEDED|FAILED)" build.log test.log 2>/dev/null | tail -8 || echo "(none)"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
