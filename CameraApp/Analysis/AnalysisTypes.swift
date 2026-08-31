@@ -63,6 +63,10 @@ struct MotionReading: Sendable, Equatable {
     var rotationRate: Double
     /// Smoothed magnitude of user acceleration, in G.
     var userAcceleration: Double
+    /// Gravity projected onto the device's screen plane. `nil` when device
+    /// attitude is unavailable (including the Simulator).
+    var gravityX: Double? = nil
+    var gravityY: Double? = nil
 }
 
 // MARK: - Faces
@@ -77,6 +81,7 @@ struct DetectedFace: Sendable, Equatable, Identifiable {
     var boundingBox: CGRect
     var roll: Double?
     var yaw: Double?
+    var confidence: Float = 1
 
     var area: Double { Double(boundingBox.width * boundingBox.height) }
 }
@@ -96,13 +101,18 @@ enum CompositionState: Sendable, Equatable {
     case noSubject
     case subjectTooClose
     case subjectTooFar
+    case dangerousEdge
     case offCenter(HorizontalNudge)
+    case excessiveHeadroom
+    case insufficientHeadroom
     case balanced
 
     var isAcceptable: Bool {
         switch self {
         case .balanced, .noSubject: return true
-        case .subjectTooClose, .subjectTooFar, .offCenter: return false
+        case .subjectTooClose, .subjectTooFar, .dangerousEdge,
+             .offCenter, .excessiveHeadroom, .insufficientHeadroom:
+            return false
         }
     }
 }
@@ -115,13 +125,65 @@ struct CompositionAssessment: Sendable, Equatable {
     var horizontalOffset: Double
     /// Fraction of the frame height occupied by the subject.
     var subjectFill: Double
+    /// Empty space above the subject in normalised frame coordinates.
+    var headroom: Double
+    /// Smallest distance between the subject box and any frame edge.
+    var edgeClearance: Double
+    /// Mean confidence of the faces used to form the assessment.
+    var detectionConfidence: Float
 
     static let noSubject = CompositionAssessment(
         state: .noSubject,
         subjectBox: nil,
         horizontalOffset: 0,
-        subjectFill: 0
+        subjectFill: 0,
+        headroom: 0,
+        edgeClearance: 1,
+        detectionConfidence: 1
     )
+}
+
+// MARK: - Level
+
+enum LevelState: Sendable, Equatable {
+    case unavailable
+    case level
+    case tiltedClockwise
+    case tiltedCounterclockwise
+}
+
+struct LevelAssessment: Sendable, Equatable {
+    var state: LevelState
+    /// Signed roll in degrees. Positive values are clockwise in preview space.
+    var rollDegrees: Double
+
+    var isAcceptable: Bool {
+        switch state {
+        case .unavailable, .level: return true
+        case .tiltedClockwise, .tiltedCounterclockwise: return false
+        }
+    }
+
+    static let unavailable = LevelAssessment(state: .unavailable, rollDegrees: 0)
+}
+
+// MARK: - Shot quality
+
+enum ShotQualitySeverity: Sendable, Equatable {
+    case critical
+    case correctable
+    case good
+}
+
+struct ShotQualityAssessment: Sendable, Equatable {
+    /// Internal-only quality score. The camera UI deliberately never shows it.
+    var score: Int
+    var severity: ShotQualitySeverity
+    var isReady: Bool
+
+    /// Compatibility default for hand-built analyses. Production analyses are
+    /// always assigned an explicit result by `ShotQualityModel`.
+    static let unknown = ShotQualityAssessment(score: 100, severity: .good, isReady: true)
 }
 
 // MARK: - Unified result
@@ -139,6 +201,8 @@ struct FrameAnalysis: Sendable, Equatable {
     /// True when the analysed frame is mirrored (front camera), which flips the
     /// meaning of left/right guidance.
     var isMirrored: Bool
+    var level: LevelAssessment = .unavailable
+    var quality: ShotQualityAssessment = .unknown
 
     /// The largest detected face, which the guidance logic treats as the subject.
     var primaryFace: DetectedFace? { faces.first }
@@ -149,7 +213,9 @@ struct FrameAnalysis: Sendable, Equatable {
         stability: .unknown,
         faces: [],
         composition: .noSubject,
-        isMirrored: false
+        isMirrored: false,
+        level: .unavailable,
+        quality: .unknown
     )
 }
 

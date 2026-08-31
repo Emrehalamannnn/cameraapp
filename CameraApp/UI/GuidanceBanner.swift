@@ -60,6 +60,10 @@ struct GuidanceBanner: View {
         case .moveCloser: return "arrow.down.right.and.arrow.up.left"
         case .moveLeft: return "arrow.left"
         case .moveRight: return "arrow.right"
+        case .raiseCamera: return "arrow.up"
+        case .lowerCamera: return "arrow.down"
+        case .reframeSubject: return "viewfinder"
+        case .straightenCamera: return "rotate.left"
         }
     }
 }

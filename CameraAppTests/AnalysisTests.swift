@@ -69,15 +69,234 @@ final class CompositionEvaluatorTests: XCTestCase {
         XCTAssertEqual(assessment.subjectBox?.midX ?? 0, 0.5, accuracy: 0.0001)
     }
 
-    private func face(centerX: Double, height: Double, id: Int = 0) -> DetectedFace {
+    func testExcessiveHeadroomAsksForVerticalCorrection() {
+        let assessment = CompositionEvaluator.evaluate(
+            faces: [face(centerX: 0.5, centerY: 0.18, height: 0.2)],
+            isMirrored: false
+        )
+        XCTAssertEqual(assessment.state, .excessiveHeadroom)
+    }
+
+    func testInsufficientHeadroomAsksForVerticalCorrection() {
+        let assessment = CompositionEvaluator.evaluate(
+            faces: [face(centerX: 0.5, centerY: 0.92, height: 0.1)],
+            isMirrored: false
+        )
+        XCTAssertEqual(assessment.state, .insufficientHeadroom)
+    }
+
+    func testFaceDangerouslyNearEdgeIsCriticalFramingIssue() {
+        let assessment = CompositionEvaluator.evaluate(
+            faces: [face(centerX: 0.04, height: 0.12)],
+            isMirrored: false
+        )
+        XCTAssertEqual(assessment.state, .dangerousEdge)
+        XCTAssertLessThan(assessment.edgeClearance, AnalysisConfiguration.standard.edgeSafetyMargin)
+    }
+
+    func testHorizontalDeadZoneMustBeExitedBeforeCorrectionClears() {
+        let first = CompositionEvaluator.evaluate(
+            faces: [face(centerX: 0.595, height: 0.3)],
+            isMirrored: false
+        )
+        XCTAssertEqual(first.state, .offCenter(.right))
+
+        let stillCorrecting = CompositionEvaluator.evaluate(
+            faces: [face(centerX: 0.565, height: 0.3)],
+            isMirrored: false,
+            previous: first
+        )
+        XCTAssertEqual(stillCorrecting.state, .offCenter(.right))
+
+        let cleared = CompositionEvaluator.evaluate(
+            faces: [face(centerX: 0.55, height: 0.3)],
+            isMirrored: false,
+            previous: stillCorrecting
+        )
+        XCTAssertEqual(cleared.state, .balanced)
+    }
+
+    func testLowConfidenceFaceDoesNotDriveComposition() {
+        let assessment = CompositionEvaluator.evaluate(
+            faces: [face(centerX: 0.2, height: 0.3, confidence: 0.2)],
+            isMirrored: false
+        )
+        XCTAssertEqual(assessment.state, .noSubject)
+    }
+
+    func testGroupDisplacementUsesUnionRatherThanContradictoryFaces() {
+        let assessment = CompositionEvaluator.evaluate(
+            faces: [
+                face(centerX: 0.15, height: 0.2),
+                face(centerX: 0.35, height: 0.2, id: 1)
+            ],
+            isMirrored: false
+        )
+        XCTAssertEqual(assessment.state, .offCenter(.left))
+    }
+
+    func testSmallGroupAsksPhotographerToMoveCloser() {
+        let assessment = CompositionEvaluator.evaluate(
+            faces: [
+                face(centerX: 0.45, height: 0.05),
+                face(centerX: 0.55, height: 0.05, id: 1)
+            ],
+            isMirrored: false
+        )
+        XCTAssertEqual(assessment.state, .subjectTooFar)
+    }
+
+    private func face(
+        centerX: Double,
+        centerY: Double = 0.5,
+        height: Double,
+        id: Int = 0,
+        confidence: Float = 1
+    ) -> DetectedFace {
         DetectedFace(
             id: id,
             boundingBox: CGRect(
                 x: centerX - height / 2,
-                y: 0.5 - height / 2,
+                y: centerY - height / 2,
                 width: height,
                 height: height
             ),
+            roll: nil,
+            yaw: nil,
+            confidence: confidence
+        )
+    }
+}
+
+final class LevelEstimatorTests: XCTestCase {
+
+    func testPortraitGravityWithinToleranceIsLevel() {
+        let result = LevelEstimator.evaluate(
+            motion: MotionReading(
+                rotationRate: 0,
+                userAcceleration: 0,
+                gravityX: 0,
+                gravityY: -1
+            ),
+            orientation: .right
+        )
+        XCTAssertEqual(result.state, .level)
+        XCTAssertEqual(result.rollDegrees, 0, accuracy: 0.001)
+    }
+
+    func testClockwiseAndCounterclockwiseTilt() {
+        let clockwise = LevelEstimator.evaluate(
+            motion: MotionReading(
+                rotationRate: 0,
+                userAcceleration: 0,
+                gravityX: -0.087,
+                gravityY: -0.996
+            ),
+            orientation: .right
+        )
+        let counterclockwise = LevelEstimator.evaluate(
+            motion: MotionReading(
+                rotationRate: 0,
+                userAcceleration: 0,
+                gravityX: 0.087,
+                gravityY: -0.996
+            ),
+            orientation: .right
+        )
+        XCTAssertEqual(clockwise.state, .tiltedClockwise)
+        XCTAssertEqual(counterclockwise.state, .tiltedCounterclockwise)
+    }
+
+    func testLevelHysteresisUsesSmallerReleaseTolerance() {
+        let tilted = LevelAssessment(state: .tiltedClockwise, rollDegrees: 5)
+        let stillTilted = LevelEstimator.evaluate(
+            motion: MotionReading(
+                rotationRate: 0,
+                userAcceleration: 0,
+                gravityX: -0.035,
+                gravityY: -0.999
+            ),
+            orientation: .right,
+            previous: tilted
+        )
+        XCTAssertEqual(stillTilted.state, .tiltedClockwise)
+
+        let level = LevelEstimator.evaluate(
+            motion: MotionReading(
+                rotationRate: 0,
+                userAcceleration: 0,
+                gravityX: -0.017,
+                gravityY: -0.999
+            ),
+            orientation: .right,
+            previous: stillTilted
+        )
+        XCTAssertEqual(level.state, .level)
+    }
+
+    func testFlatPhoneFailsGracefullyInsteadOfInventingLevel() {
+        let result = LevelEstimator.evaluate(
+            motion: MotionReading(
+                rotationRate: 0,
+                userAcceleration: 0,
+                gravityX: 0.05,
+                gravityY: 0.05
+            ),
+            orientation: .right
+        )
+        XCTAssertEqual(result.state, .unavailable)
+    }
+}
+
+final class ShotQualityModelTests: XCTestCase {
+
+    func testComfortablyGoodShotIsReady() {
+        let faces = [face()]
+        let composition = CompositionEvaluator.evaluate(faces: faces, isMirrored: false)
+        let result = ShotQualityModel.evaluate(
+            lighting: LightingAssessment(quality: .good, exposureValue: nil, meanLuma: 0.5),
+            stability: StabilityAssessment(level: .steady, motionScore: 0),
+            faces: faces,
+            composition: composition,
+            level: LevelAssessment(state: .level, rollDegrees: 0)
+        )
+        XCTAssertTrue(result.isReady)
+        XCTAssertEqual(result.severity, .good)
+    }
+
+    func testDarknessAndDangerousCropAreCritical() {
+        let faces = [face(centerX: 0.04)]
+        let composition = CompositionEvaluator.evaluate(faces: faces, isMirrored: false)
+        let result = ShotQualityModel.evaluate(
+            lighting: LightingAssessment(quality: .tooDark, exposureValue: nil, meanLuma: 0.03),
+            stability: StabilityAssessment(level: .steady, motionScore: 0),
+            faces: faces,
+            composition: composition,
+            level: .unavailable
+        )
+        XCTAssertFalse(result.isReady)
+        XCTAssertEqual(result.severity, .critical)
+        XCTAssertLessThan(result.score, AnalysisConfiguration.standard.readyScore)
+    }
+
+    func testTiltIsCorrectableRatherThanCritical() {
+        let faces = [face()]
+        let composition = CompositionEvaluator.evaluate(faces: faces, isMirrored: false)
+        let result = ShotQualityModel.evaluate(
+            lighting: LightingAssessment(quality: .good, exposureValue: nil, meanLuma: 0.5),
+            stability: StabilityAssessment(level: .steady, motionScore: 0),
+            faces: faces,
+            composition: composition,
+            level: LevelAssessment(state: .tiltedClockwise, rollDegrees: 5)
+        )
+        XCTAssertFalse(result.isReady)
+        XCTAssertEqual(result.severity, .correctable)
+    }
+
+    private func face(centerX: Double = 0.5) -> DetectedFace {
+        DetectedFace(
+            id: 0,
+            boundingBox: CGRect(x: centerX - 0.15, y: 0.35, width: 0.3, height: 0.3),
             roll: nil,
             yaw: nil
         )

@@ -12,32 +12,57 @@ import Foundation
 
 enum CompositionEvaluator {
 
-    /// Subject height (as a fraction of frame height) below which the subject
-    /// reads as too small to be the point of the photo.
-    static let minimumSubjectFill = 0.13
-    /// Above this the subject is cropped uncomfortably tight.
-    static let maximumSubjectFill = 0.48
-    /// Half-width of the "centred enough" band, in `-1...1` offset units.
-    static let centerTolerance = 0.16
-
     /// - Parameters:
     ///   - faces: faces in as-displayed normalised space (bottom-left origin).
     ///   - isMirrored: true for the mirrored front-camera preview. The preview
     ///     behaves like a mirror, so the correction the photographer must make
     ///     is the opposite of the one that centres an unmirrored frame.
-    static func evaluate(faces: [DetectedFace], isMirrored: Bool) -> CompositionAssessment {
-        guard let first = faces.first else { return .noSubject }
+    /// Passing the previous assessment gives each threshold a smaller release
+    /// boundary than entry boundary. That dead zone prevents a face hovering
+    /// on one pixel boundary from alternating instructions every frame.
+    static func evaluate(
+        faces: [DetectedFace],
+        isMirrored: Bool,
+        previous: CompositionAssessment? = nil,
+        configuration: AnalysisConfiguration = .standard
+    ) -> CompositionAssessment {
+        let reliableFaces = faces.filter { $0.confidence >= configuration.minimumDetectionConfidence }
+        guard let first = reliableFaces.first else {
+            guard !faces.isEmpty else { return .noSubject }
+            var assessment = CompositionAssessment.noSubject
+            assessment.detectionConfidence = faces.reduce(Float.zero) { $0 + $1.confidence }
+                / Float(faces.count)
+            return assessment
+        }
 
-        let box = faces.dropFirst().reduce(first.boundingBox) { $0.union($1.boundingBox) }
+        let box = reliableFaces.dropFirst().reduce(first.boundingBox) { $0.union($1.boundingBox) }
         let fill = Double(box.height)
         let offset = Double(box.midX - 0.5) * 2
+        let headroom = max(0, min(1, 1 - Double(box.maxY)))
+        let edgeClearance = max(
+            0,
+            min(
+                Double(box.minX),
+                Double(box.minY),
+                1 - Double(box.maxX),
+                1 - Double(box.maxY)
+            )
+        )
+        let confidence = reliableFaces.reduce(Float.zero) { $0 + $1.confidence }
+            / Float(reliableFaces.count)
 
         let state: CompositionState
-        if fill > maximumSubjectFill {
+        if edgeClearance < configuration.edgeSafetyMargin {
+            state = .dangerousEdge
+        } else if fill > maximumFillThreshold(previous: previous, configuration: configuration) {
             state = .subjectTooClose
-        } else if fill < minimumSubjectFill {
+        } else if fill < minimumFillThreshold(previous: previous, configuration: configuration) {
             state = .subjectTooFar
-        } else if abs(offset) > centerTolerance {
+        } else if headroom < minimumHeadroomThreshold(previous: previous, configuration: configuration) {
+            state = .insufficientHeadroom
+        } else if headroom > maximumHeadroomThreshold(previous: previous, configuration: configuration) {
+            state = .excessiveHeadroom
+        } else if abs(offset) > horizontalThreshold(previous: previous, configuration: configuration) {
             // The subject sits left of centre, so the frame has to travel left
             // to catch up with them — unless the preview is mirrored.
             let nudge: HorizontalNudge = offset < 0 ? .left : .right
@@ -50,7 +75,56 @@ enum CompositionEvaluator {
             state: state,
             subjectBox: box,
             horizontalOffset: offset,
-            subjectFill: fill
+            subjectFill: fill,
+            headroom: headroom,
+            edgeClearance: edgeClearance,
+            detectionConfidence: confidence
         )
+    }
+
+    private static func maximumFillThreshold(
+        previous: CompositionAssessment?,
+        configuration: AnalysisConfiguration
+    ) -> Double {
+        previous?.state == .subjectTooClose
+            ? configuration.maximumSubjectFill - configuration.subjectFillHysteresis
+            : configuration.maximumSubjectFill
+    }
+
+    private static func minimumFillThreshold(
+        previous: CompositionAssessment?,
+        configuration: AnalysisConfiguration
+    ) -> Double {
+        previous?.state == .subjectTooFar
+            ? configuration.minimumSubjectFill + configuration.subjectFillHysteresis
+            : configuration.minimumSubjectFill
+    }
+
+    private static func horizontalThreshold(
+        previous: CompositionAssessment?,
+        configuration: AnalysisConfiguration
+    ) -> Double {
+        if case .offCenter? = previous?.state {
+            return configuration.horizontalExitTolerance
+        }
+        return configuration.horizontalEnterTolerance
+    }
+
+    private static func minimumHeadroomThreshold(
+        previous: CompositionAssessment?,
+        configuration: AnalysisConfiguration
+    ) -> Double {
+        previous?.state == .insufficientHeadroom
+            ? configuration.minimumHeadroom + configuration.headroomHysteresis
+            : configuration.minimumHeadroom
+    }
+
+    private static func maximumHeadroomThreshold(
+        previous: CompositionAssessment?,
+        configuration: AnalysisConfiguration
+    ) -> Double {
+        previous?.state == .excessiveHeadroom
+            ? configuration.maximumHeadroom - configuration.headroomHysteresis
+            : configuration.maximumHeadroom
     }
 }

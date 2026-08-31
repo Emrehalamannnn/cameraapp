@@ -25,16 +25,20 @@ actor FrameAnalysisService {
 
     private let faceRequest: VNDetectFaceRectanglesRequest
     private let motionMonitor = MotionMonitor()
+    private let configuration: AnalysisConfiguration
 
     private var previousGrid: [Float]?
+    private var previousComposition: CompositionAssessment?
+    private var previousLevel: LevelAssessment?
     private var isRunning = false
 
-    init() {
+    init(configuration: AnalysisConfiguration = .standard) {
         let (stream, continuation) = AsyncStream<FrameAnalysis>.makeStream(
             bufferingPolicy: .bufferingNewest(1)
         )
         analyses = stream
         self.continuation = continuation
+        self.configuration = configuration
 
         let request = VNDetectFaceRectanglesRequest()
         request.revision = VNDetectFaceRectanglesRequestRevision3
@@ -49,6 +53,8 @@ actor FrameAnalysisService {
         guard !isRunning else { return }
         isRunning = true
         previousGrid = nil
+        previousComposition = nil
+        previousLevel = nil
         motionMonitor.start()
     }
 
@@ -56,6 +62,8 @@ actor FrameAnalysisService {
         guard isRunning else { return }
         isRunning = false
         previousGrid = nil
+        previousComposition = nil
+        previousLevel = nil
         motionMonitor.stop()
     }
 
@@ -82,12 +90,34 @@ actor FrameAnalysisService {
             exposure: context.exposure,
             meanLuma: sample?.mean ?? 0.5
         )
+        let motion = motionMonitor.currentReading()
         let stability = StabilityEstimator.evaluate(
-            motion: motionMonitor.currentReading(),
+            motion: motion,
             frameDelta: frameDelta
         )
         let faces = detectFaces(in: pixelBuffer, orientation: context.orientation)
-        let composition = CompositionEvaluator.evaluate(faces: faces, isMirrored: context.isMirrored)
+        let composition = CompositionEvaluator.evaluate(
+            faces: faces,
+            isMirrored: context.isMirrored,
+            previous: previousComposition,
+            configuration: configuration
+        )
+        let level = LevelEstimator.evaluate(
+            motion: motion,
+            orientation: context.orientation,
+            previous: previousLevel,
+            configuration: configuration
+        )
+        let quality = ShotQualityModel.evaluate(
+            lighting: lighting,
+            stability: stability,
+            faces: faces,
+            composition: composition,
+            level: level,
+            configuration: configuration
+        )
+        previousComposition = composition
+        previousLevel = level
 
         continuation.yield(
             FrameAnalysis(
@@ -96,7 +126,9 @@ actor FrameAnalysisService {
                 stability: stability,
                 faces: faces,
                 composition: composition,
-                isMirrored: context.isMirrored
+                isMirrored: context.isMirrored,
+                level: level,
+                quality: quality
             )
         )
     }
@@ -128,7 +160,8 @@ actor FrameAnalysisService {
                     id: index,
                     boundingBox: observation.boundingBox,
                     roll: observation.roll?.doubleValue,
-                    yaw: observation.yaw?.doubleValue
+                    yaw: observation.yaw?.doubleValue,
+                    confidence: observation.confidence
                 )
             }
     }

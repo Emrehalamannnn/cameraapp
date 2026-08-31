@@ -76,6 +76,15 @@ struct CameraView: View {
                 GuidanceBanner(state: model.guidance, rotation: model.orientation.controlRotation)
                     .padding(.top, 18)
 
+                if model.guidance?.message == .straightenCamera {
+                    LevelIndicatorView(
+                        rollDegrees: model.level.rollDegrees,
+                        rotation: model.orientation.controlRotation
+                    )
+                    .padding(.top, 8)
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                }
+
                 Spacer(minLength: 0)
 
                 if let message = model.message {
@@ -160,6 +169,17 @@ struct CameraView: View {
             Spacer(minLength: 0)
 
             GlassCircleButton(
+                systemImage: "timer",
+                accessibilityLabel: model.isAutoCaptureEnabled
+                    ? "Disable Auto Capture"
+                    : "Enable Auto Capture",
+                isHighlighted: model.isAutoCaptureEnabled,
+                rotation: model.orientation.controlRotation
+            ) {
+                model.toggleAutoCapture()
+            }
+
+            GlassCircleButton(
                 systemImage: "grid",
                 accessibilityLabel: model.isGridVisible ? "Hide grid" : "Show grid",
                 isHighlighted: model.isGridVisible,
@@ -185,7 +205,8 @@ struct CameraView: View {
                 ShutterButton(
                     isReady: model.guidance?.isReady == true,
                     isBusy: model.isCapturing,
-                    isEnabled: model.status.isRunning && !model.isInterrupted
+                    isEnabled: model.status.isRunning && !model.isInterrupted,
+                    autoCaptureProgress: model.autoCaptureProgress
                 ) {
                     model.capturePhoto()
                 }

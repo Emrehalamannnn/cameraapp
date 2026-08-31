@@ -31,6 +31,8 @@ final class MotionMonitor: @unchecked Sendable {
     private let lock = NSLock()
     private var rotationRate: Double = 0
     private var userAcceleration: Double = 0
+    private var gravityX: Double = 0
+    private var gravityY: Double = 0
     private var hasReading = false
     private var isRunning = false
 
@@ -55,6 +57,8 @@ final class MotionMonitor: @unchecked Sendable {
         isRunning = false
         rotationRate = 0
         userAcceleration = 0
+        gravityX = 0
+        gravityY = 0
         hasReading = false
         lock.unlock()
         if manager.isDeviceMotionActive {
@@ -68,7 +72,12 @@ final class MotionMonitor: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         guard hasReading else { return nil }
-        return MotionReading(rotationRate: rotationRate, userAcceleration: userAcceleration)
+        return MotionReading(
+            rotationRate: rotationRate,
+            userAcceleration: userAcceleration,
+            gravityX: gravityX,
+            gravityY: gravityY
+        )
     }
 
     private func ingest(_ motion: CMDeviceMotion) {
@@ -85,9 +94,13 @@ final class MotionMonitor: @unchecked Sendable {
         if hasReading {
             rotationRate += (rate - rotationRate) * smoothing
             userAcceleration += (acceleration - userAcceleration) * smoothing
+            gravityX += (motion.gravity.x - gravityX) * smoothing
+            gravityY += (motion.gravity.y - gravityY) * smoothing
         } else {
             rotationRate = rate
             userAcceleration = acceleration
+            gravityX = motion.gravity.x
+            gravityY = motion.gravity.y
             hasReading = true
         }
     }

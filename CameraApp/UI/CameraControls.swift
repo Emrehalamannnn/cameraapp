@@ -57,6 +57,7 @@ struct ShutterButton: View {
     let isReady: Bool
     let isBusy: Bool
     let isEnabled: Bool
+    let autoCaptureProgress: Double
     let action: () -> Void
 
     private static let outerDiameter: CGFloat = 76
@@ -68,6 +69,17 @@ struct ShutterButton: View {
                 Circle()
                     .strokeBorder(isReady ? Color.readyAccent : Color.white.opacity(0.9), lineWidth: 3)
                     .frame(width: Self.outerDiameter, height: Self.outerDiameter)
+                if autoCaptureProgress > 0, !isBusy {
+                    Circle()
+                        .trim(from: 0, to: min(max(autoCaptureProgress, 0), 1))
+                        .stroke(
+                            Color.readyAccent,
+                            style: StrokeStyle(lineWidth: 5, lineCap: .round)
+                        )
+                        .rotationEffect(.degrees(-90))
+                        .frame(width: Self.outerDiameter, height: Self.outerDiameter)
+                        .animation(.linear(duration: 0.1), value: autoCaptureProgress)
+                }
                 Circle()
                     .fill(Color.white)
                     .frame(width: Self.innerDiameter, height: Self.innerDiameter)
@@ -85,7 +97,13 @@ struct ShutterButton: View {
         .disabled(!isEnabled || isBusy)
         .opacity(isEnabled ? 1 : 0.5)
         .accessibilityLabel(Text("Take photo"))
-        .accessibilityHint(Text(isReady ? "The shot is ready" : "Framing guidance is still adjusting"))
+        .accessibilityHint(
+            Text(
+                autoCaptureProgress > 0
+                    ? "Auto Capture is preparing to take the photo"
+                    : (isReady ? "The shot is ready" : "Framing guidance is still adjusting")
+            )
+        )
     }
 }
 

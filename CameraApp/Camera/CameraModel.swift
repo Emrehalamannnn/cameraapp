@@ -53,6 +53,8 @@ final class CameraModel {
     /// The one instruction currently on screen. `nil` before the first is earned.
     private(set) var guidance: GuidanceState?
     private(set) var faces: [DetectedFace] = []
+    private(set) var level: LevelAssessment = .unavailable
+    private(set) var shotQuality: ShotQualityAssessment = .unknown
     private(set) var configuration: CameraConfiguration = .unknown
     private(set) var selectedZoom: Double = 1
     private(set) var flashMode: FlashMode = .auto
@@ -66,6 +68,8 @@ final class CameraModel {
     private(set) var shutterFlashOpacity: Double = 0
     private(set) var message: String?
     private(set) var isPhotoAccessDenied = false
+    private(set) var isAutoCaptureEnabled = false
+    private(set) var autoCaptureProgress: Double = 0
 
     var isReviewing: Bool { review != nil }
 
@@ -77,8 +81,10 @@ final class CameraModel {
     @ObservationIgnored private let analysisService: FrameAnalysisService
     @ObservationIgnored private let captureService: CaptureService
     @ObservationIgnored private let mediaLibrary = MediaLibraryService()
+    @ObservationIgnored private let analysisConfiguration: AnalysisConfiguration
 
-    @ObservationIgnored private var guidanceEngine = GuidanceEngine()
+    @ObservationIgnored private var guidanceEngine: GuidanceEngine
+    @ObservationIgnored private var autoCaptureController: AutoCaptureController
     @ObservationIgnored private var analysisTask: Task<Void, Never>?
     @ObservationIgnored private var observationTasks: [Task<Void, Never>] = []
     @ObservationIgnored private var messageTask: Task<Void, Never>?
@@ -86,13 +92,17 @@ final class CameraModel {
     @ObservationIgnored private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
     @ObservationIgnored private var rotationObservers: [NSKeyValueObservation] = []
     @ObservationIgnored private var pinchBaseZoom: Double?
+    @ObservationIgnored private var isForegrounded = false
 
     var session: AVCaptureSession { captureService.session }
 
-    init() {
-        let analysis = FrameAnalysisService()
+    init(analysisConfiguration: AnalysisConfiguration = .standard) {
+        self.analysisConfiguration = analysisConfiguration
+        let analysis = FrameAnalysisService(configuration: analysisConfiguration)
         analysisService = analysis
         captureService = CaptureService(analyzer: analysis)
+        guidanceEngine = GuidanceEngine(configuration: analysisConfiguration)
+        autoCaptureController = AutoCaptureController(configuration: analysisConfiguration)
         previewController.onAttach = { [weak self] in
             guard let self else { return }
             Task { await self.refreshRotationCoordinator() }
@@ -104,6 +114,8 @@ final class CameraModel {
     /// Entry point for the camera screen. Safe to call repeatedly.
     func start() async {
         guard status == .idle || status == .cameraAccessDenied || isFailed else { return }
+        isForegrounded = true
+        resetAutoCapture(requiresReadyExit: true)
         status = .starting
 
         let access = await CameraPermission.requestAccess()
@@ -129,6 +141,8 @@ final class CameraModel {
 
     /// Called when the app returns to the foreground.
     func resume() async {
+        isForegrounded = true
+        resetAutoCapture(requiresReadyExit: true)
         switch status {
         case .cameraAccessDenied where CameraPermission.access == .granted:
             status = .idle
@@ -157,6 +171,8 @@ final class CameraModel {
     /// Called when the app is backgrounded: the session is released so the
     /// camera is not held while another app may need it.
     func suspend() async {
+        isForegrounded = false
+        resetAutoCapture(requiresReadyExit: true)
         orientation.stop()
         // The analysis consumer is deliberately left running: an AsyncStream is
         // single-shot, and cancelling its consumer would tear the pipeline down
@@ -166,6 +182,8 @@ final class CameraModel {
         await captureService.stop()
         guidance = nil
         faces = []
+        level = .unavailable
+        shotQuality = .unknown
         guidanceEngine.reset()
     }
 
@@ -181,19 +199,29 @@ final class CameraModel {
         Haptics.shared.selectionSignal()
     }
 
+    func toggleAutoCapture() {
+        isAutoCaptureEnabled.toggle()
+        resetAutoCapture()
+        Haptics.shared.selectionSignal()
+    }
+
     func switchCamera() {
         guard status.isRunning, !isSwitchingCamera, !isCapturing else { return }
         isSwitchingCamera = true
         Haptics.shared.selectionSignal()
         faces = []
         guidance = nil
+        level = .unavailable
+        shotQuality = .unknown
         guidanceEngine.reset()
+        resetAutoCapture(requiresReadyExit: true)
 
         Task {
             defer { isSwitchingCamera = false }
             do {
                 let configuration = try await captureService.switchCamera()
                 apply(configuration)
+                suppressAutoCaptureForSettling()
                 await refreshRotationCoordinator()
             } catch {
                 present(message: "Could not switch camera")
@@ -237,6 +265,7 @@ final class CameraModel {
         let indicator = FocusIndicator(point: point)
         focusIndicator = indicator
         Haptics.shared.selectionSignal()
+        suppressAutoCaptureForSettling()
 
         Task { await captureService.focus(at: devicePoint, isUserInitiated: true) }
 
@@ -251,6 +280,11 @@ final class CameraModel {
     // MARK: - Capture
 
     func capturePhoto() {
+        resetAutoCapture(requiresReadyExit: true)
+        performCapture()
+    }
+
+    private func performCapture() {
         guard status.isRunning, !isCapturing, !isReviewing else { return }
         isCapturing = true
         Haptics.shared.shutterSignal()
@@ -266,6 +300,8 @@ final class CameraModel {
                 let image = await photo.makePreviewImage(maxDimension: 2200)
                 guidance = nil
                 faces = []
+                level = .unavailable
+                shotQuality = .unknown
                 guidanceEngine.reset()
                 review = PhotoReview(photo: photo, image: image)
             } catch {
@@ -277,6 +313,7 @@ final class CameraModel {
     func retakePhoto() {
         review = nil
         isPhotoAccessDenied = false
+        resetAutoCapture(requiresReadyExit: true)
         Task { await captureService.setAnalysisEnabled(true) }
     }
 
@@ -295,6 +332,7 @@ final class CameraModel {
                 try await mediaLibrary.save(review.photo)
                 self.review = nil
                 isPhotoAccessDenied = false
+                resetAutoCapture(requiresReadyExit: true)
                 await captureService.setAnalysisEnabled(true)
                 present(message: "Saved to Photos")
             } catch {
@@ -322,6 +360,12 @@ final class CameraModel {
         if faces != analysis.faces {
             faces = analysis.faces
         }
+        if level != analysis.level {
+            level = analysis.level
+        }
+        if shotQuality != analysis.quality {
+            shotQuality = analysis.quality
+        }
 
         let update = guidanceEngine.update(with: analysis, now: CACurrentMediaTime())
         if guidance != update.state {
@@ -329,6 +373,19 @@ final class CameraModel {
         }
         if update.didBecomeReady {
             Haptics.shared.readySignal()
+        }
+
+        let autoUpdate = autoCaptureController.update(
+            isEnabled: isAutoCaptureEnabled,
+            isReady: guidance?.isReady == true && analysis.quality.isReady,
+            canCapture: canAutoCapture,
+            now: CACurrentMediaTime()
+        )
+        if autoCaptureProgress != autoUpdate.progress {
+            autoCaptureProgress = autoUpdate.progress
+        }
+        if autoUpdate.shouldCapture {
+            performCapture()
         }
     }
 
@@ -382,6 +439,7 @@ final class CameraModel {
                     named: AVCaptureDevice.subjectAreaDidChangeNotification
                 ) {
                     guard let self else { return }
+                    self.suppressAutoCaptureForSettling()
                     await self.captureService.resetFocusAndExposure()
                 }
             }
@@ -392,7 +450,10 @@ final class CameraModel {
         isInterrupted = true
         guidance = nil
         faces = []
+        level = .unavailable
+        shotQuality = .unknown
         guidanceEngine.reset()
+        resetAutoCapture(requiresReadyExit: true)
 
         let rawReason = notification.userInfo?[AVCaptureSessionInterruptionReasonKey] as? Int
         let reason = rawReason.flatMap(AVCaptureSession.InterruptionReason.init(rawValue:))
@@ -411,6 +472,13 @@ final class CameraModel {
     }
 
     private func handleRuntimeError(_ notification: Notification) async {
+        guidance = nil
+        faces = []
+        level = .unavailable
+        shotQuality = .unknown
+        guidanceEngine.reset()
+        resetAutoCapture(requiresReadyExit: true)
+
         let error = notification.userInfo?[AVCaptureSessionErrorKey] as? AVError
         // A media services reset invalidates the session; restarting is the
         // documented recovery.
@@ -418,6 +486,7 @@ final class CameraModel {
             do {
                 let configuration = try await captureService.start()
                 apply(configuration)
+                suppressAutoCaptureForSettling()
                 await refreshRotationCoordinator()
                 return
             } catch {
@@ -474,6 +543,27 @@ final class CameraModel {
     private var isFailed: Bool {
         if case .failed = status { return true }
         return false
+    }
+
+    private var canAutoCapture: Bool {
+        isForegrounded
+            && status.isRunning
+            && !isCapturing
+            && !isReviewing
+            && !isSwitchingCamera
+            && !isInterrupted
+    }
+
+    private func resetAutoCapture(requiresReadyExit: Bool = false) {
+        autoCaptureProgress = 0
+        autoCaptureController.reset(requiresReadyExit: requiresReadyExit)
+    }
+
+    private func suppressAutoCaptureForSettling() {
+        autoCaptureProgress = 0
+        autoCaptureController.suppress(
+            until: CACurrentMediaTime() + analysisConfiguration.focusSettlingDwell
+        )
     }
 
     private func apply(_ configuration: CameraConfiguration) {

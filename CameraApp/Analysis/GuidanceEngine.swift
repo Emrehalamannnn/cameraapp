@@ -22,6 +22,10 @@ enum GuidanceMessage: String, Sendable, Equatable, CaseIterable {
     case moveCloser = "Move closer"
     case moveLeft = "Move slightly left"
     case moveRight = "Move slightly right"
+    case raiseCamera = "Raise camera"
+    case lowerCamera = "Lower camera"
+    case reframeSubject = "Keep subject in frame"
+    case straightenCamera = "Straighten camera"
     case ready = "Ready"
 
     var isReady: Bool { self == .ready }
@@ -46,19 +50,23 @@ struct GuidanceUpdate: Sendable, Equatable {
 struct GuidanceEngine {
 
     /// How long a new instruction must hold before it is shown.
-    var dwell: TimeInterval = 0.35
+    var dwell: TimeInterval
     /// Ready is a promise, so it has to be earned over a longer window.
-    var readyDwell: TimeInterval = 0.6
+    var readyDwell: TimeInterval
     /// Leaving Ready is quicker: a shot that stopped being good should stop
     /// claiming to be good.
-    var exitReadyDwell: TimeInterval = 0.2
+    var exitReadyDwell: TimeInterval
 
     /// The message currently on screen, or `nil` before the first one is earned.
     private(set) var current: GuidanceMessage?
     private var candidate: GuidanceMessage?
     private var candidateSince: TimeInterval = 0
 
-    init() {}
+    init(configuration: AnalysisConfiguration = .standard) {
+        dwell = configuration.guidanceDwell
+        readyDwell = configuration.readyDwell
+        exitReadyDwell = configuration.exitReadyDwell
+    }
 
     /// Priority order: light, then steadiness, then framing. Only one thing is
     /// ever wrong "first", which is what keeps the UI quiet.
@@ -77,15 +85,30 @@ struct GuidanceEngine {
         }
 
         switch analysis.composition.state {
+        case .dangerousEdge:
+            return .reframeSubject
         case .subjectTooClose:
             return .stepBack
         case .subjectTooFar:
             return .moveCloser
+        case .excessiveHeadroom:
+            return .lowerCamera
+        case .insufficientHeadroom:
+            return .raiseCamera
         case .offCenter(let nudge):
             return nudge == .left ? .moveLeft : .moveRight
         case .balanced, .noSubject:
-            return .ready
+            break
         }
+
+        if !analysis.level.isAcceptable {
+            return .straightenCamera
+        }
+
+        if !analysis.quality.isReady {
+            return .reframeSubject
+        }
+        return .ready
     }
 
     /// Feeds one analysis to the engine.

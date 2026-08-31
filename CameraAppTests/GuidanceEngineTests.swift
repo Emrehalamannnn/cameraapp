@@ -52,6 +52,42 @@ final class GuidanceEngineTests: XCTestCase {
         XCTAssertEqual(GuidanceEngine.target(for: analysis), .ready)
     }
 
+    func testDangerousCropRequestsReframing() {
+        let analysis = makeAnalysis(
+            lighting: .good,
+            stability: .steady,
+            faces: [face(centerX: 0.04, height: 0.12)]
+        )
+        XCTAssertEqual(GuidanceEngine.target(for: analysis), .reframeSubject)
+    }
+
+    func testVerticalHeadroomDirectionsMatchPreviewCoordinates() {
+        let excessive = makeAnalysis(
+            faces: [face(centerX: 0.5, centerY: 0.18, height: 0.2)]
+        )
+        let insufficient = makeAnalysis(
+            faces: [face(centerX: 0.5, centerY: 0.92, height: 0.1)]
+        )
+        XCTAssertEqual(GuidanceEngine.target(for: excessive), .lowerCamera)
+        XCTAssertEqual(GuidanceEngine.target(for: insufficient), .raiseCamera)
+    }
+
+    func testLevelCorrectionComesAfterAcceptableFraming() {
+        let analysis = makeAnalysis(
+            faces: [face(centerX: 0.5, height: 0.3)],
+            level: LevelAssessment(state: .tiltedClockwise, rollDegrees: 6)
+        )
+        XCTAssertEqual(GuidanceEngine.target(for: analysis), .straightenCamera)
+    }
+
+    func testFramingCorrectionOutranksLevelCorrection() {
+        let analysis = makeAnalysis(
+            faces: [face(centerX: 0.2, height: 0.3)],
+            level: LevelAssessment(state: .tiltedClockwise, rollDegrees: 6)
+        )
+        XCTAssertEqual(GuidanceEngine.target(for: analysis), .moveLeft)
+    }
+
     // MARK: - Dwell behaviour
 
     func testFirstCorrectiveMessageAppearsImmediately() {
@@ -121,12 +157,12 @@ final class GuidanceEngineTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func face(centerX: Double, height: Double) -> DetectedFace {
+    private func face(centerX: Double, centerY: Double = 0.5, height: Double) -> DetectedFace {
         DetectedFace(
             id: 0,
             boundingBox: CGRect(
                 x: centerX - height / 2,
-                y: 0.5 - height / 2,
+                y: centerY - height / 2,
                 width: height,
                 height: height
             ),
@@ -139,15 +175,32 @@ final class GuidanceEngineTests: XCTestCase {
         lighting: LightingQuality = .good,
         stability: StabilityLevel = .steady,
         faces: [DetectedFace] = [],
-        isMirrored: Bool = false
+        isMirrored: Bool = false,
+        level: LevelAssessment = .unavailable
     ) -> FrameAnalysis {
+        let lightingAssessment = LightingAssessment(
+            quality: lighting,
+            exposureValue: nil,
+            meanLuma: 0.5
+        )
+        let stabilityAssessment = StabilityAssessment(level: stability, motionScore: 0)
+        let composition = CompositionEvaluator.evaluate(faces: faces, isMirrored: isMirrored)
+        let quality = ShotQualityModel.evaluate(
+            lighting: lightingAssessment,
+            stability: stabilityAssessment,
+            faces: faces,
+            composition: composition,
+            level: level
+        )
         FrameAnalysis(
             timestamp: 0,
-            lighting: LightingAssessment(quality: lighting, exposureValue: nil, meanLuma: 0.5),
-            stability: StabilityAssessment(level: stability, motionScore: 0),
+            lighting: lightingAssessment,
+            stability: stabilityAssessment,
             faces: faces,
-            composition: CompositionEvaluator.evaluate(faces: faces, isMirrored: isMirrored),
-            isMirrored: isMirrored
+            composition: composition,
+            isMirrored: isMirrored,
+            level: level,
+            quality: quality
         )
     }
 }
