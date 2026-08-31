@@ -192,7 +192,7 @@ final class GuidanceEngineTests: XCTestCase {
             composition: composition,
             level: level
         )
-        FrameAnalysis(
+        return FrameAnalysis(
             timestamp: 0,
             lighting: lightingAssessment,
             stability: stabilityAssessment,
