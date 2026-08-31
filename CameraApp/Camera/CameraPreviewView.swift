@@ -45,13 +45,13 @@ final class PreviewController {
     var onAttach: (() -> Void)?
 
     var previewLayer: AVCaptureVideoPreviewLayer? { previewView?.previewLayer }
-    var previewSize: CGSize { previewView?.bounds.size ?? .zero }
 
     func attach(_ view: CameraPreviewUIView) {
         previewView = view
-        // Announce on the next turn: attaching happens during SwiftUI's view
-        // update, and the model reacts by mutating observable state.
-        DispatchQueue.main.async { [weak self] in
+        // Announce on the next main-actor turn: attaching happens during
+        // SwiftUI's view update, and the model reacts by mutating observable
+        // state, which must not happen mid-update.
+        Task { @MainActor [weak self] in
             self?.onAttach?()
         }
     }

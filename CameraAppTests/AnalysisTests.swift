@@ -86,7 +86,7 @@ final class CompositionEvaluatorTests: XCTestCase {
 
 final class LightingEstimatorTests: XCTestCase {
 
-    func testSunlightExposurePairScoresHigh() {
+    func testSunlightExposurePairScoresHigh() throws {
         // f/1.8, 1/2000 s, ISO 40 — bright daylight.
         let reading = ExposureReading(iso: 40, duration: 1.0 / 2000, aperture: 1.8)
         let value = try XCTUnwrap(LightingEstimator.exposureValue(for: reading))

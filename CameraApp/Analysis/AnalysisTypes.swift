@@ -8,6 +8,7 @@
 //
 
 import CoreGraphics
+import CoreVideo
 import Foundation
 import ImageIO
 
@@ -160,6 +161,18 @@ struct FrameContext: Sendable {
     var isMirrored: Bool
     var exposure: ExposureReading?
     var timestamp: TimeInterval
+}
+
+/// One frame handed to the analyser **by reference**.
+///
+/// `@unchecked Sendable` is a deliberate, load-bearing choice: copying a
+/// full-resolution frame per analysis is exactly the cost this pipeline exists
+/// to avoid. It is safe because `VideoFrameProcessor` releases at most one
+/// frame at a time (its busy flag), the analyser only ever reads the buffer,
+/// and AVFoundation does not recycle it while it is retained.
+struct FrameSample: @unchecked Sendable {
+    var pixelBuffer: CVPixelBuffer
+    var context: FrameContext
 }
 
 /// A snapshot of the capture device's exposure state.

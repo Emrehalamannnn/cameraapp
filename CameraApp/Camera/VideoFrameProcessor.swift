@@ -20,7 +20,9 @@ import Foundation
 import ImageIO
 import QuartzCore
 
-final class VideoFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+/// `@unchecked Sendable`: every mutable property below is read and written
+/// only on `queue`, the serial queue AVFoundation delivers frames on.
+final class VideoFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
 
     /// Serial queue that AVFoundation delivers sample buffers on, and the only
     /// queue that touches this object's mutable state.
@@ -89,16 +91,19 @@ final class VideoFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBufferD
         lastDispatchTime = now
         isAnalyzing = true
 
-        let context = FrameContext(
-            orientation: orientation,
-            isMirrored: isMirrored,
-            exposure: currentExposure(),
-            timestamp: now
+        let frame = FrameSample(
+            pixelBuffer: pixelBuffer,
+            context: FrameContext(
+                orientation: orientation,
+                isMirrored: isMirrored,
+                exposure: currentExposure(),
+                timestamp: now
+            )
         )
 
         let analyzer = self.analyzer
         Task.detached(priority: .userInitiated) { [weak self] in
-            await analyzer.analyze(pixelBuffer: pixelBuffer, context: context)
+            await analyzer.analyze(frame)
             self?.queue.async { self?.isAnalyzing = false }
         }
     }

@@ -63,9 +63,11 @@ actor FrameAnalysisService {
     ///
     /// The pixel buffer is read in place — locked, sampled, handed to Vision,
     /// released. No image copies, no CIContext, no CGImage round-trip.
-    func analyze(pixelBuffer: CVPixelBuffer, context: FrameContext) {
+    func analyze(_ frame: FrameSample) {
         guard isRunning else { return }
 
+        let pixelBuffer = frame.pixelBuffer
+        let context = frame.context
         let sample = LumaSampler.sample(pixelBuffer)
 
         var frameDelta: Double = 0
