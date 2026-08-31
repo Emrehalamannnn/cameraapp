@@ -16,6 +16,10 @@ struct CameraView: View {
     /// ignored, so it matches the AVCaptureVideoPreviewLayer's own bounds.
     @State private var previewSize: CGSize = .zero
 
+    init(model: CameraModel) {
+        self.model = model
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()

@@ -11,6 +11,8 @@ struct FocusIndicatorView: View {
 
     @State private var isSettled = false
 
+    init() {}
+
     var body: some View {
         RoundedRectangle(cornerRadius: 6, style: .continuous)
             .stroke(Color.yellow.opacity(0.95), lineWidth: 1.2)

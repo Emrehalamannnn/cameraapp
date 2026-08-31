@@ -59,18 +59,18 @@ struct ShutterButton: View {
     let isEnabled: Bool
     let action: () -> Void
 
-    private let outerDiameter: CGFloat = 76
-    private let innerDiameter: CGFloat = 62
+    private static let outerDiameter: CGFloat = 76
+    private static let innerDiameter: CGFloat = 62
 
     var body: some View {
         Button(action: action) {
             ZStack {
                 Circle()
                     .strokeBorder(isReady ? Color.readyAccent : Color.white.opacity(0.9), lineWidth: 3)
-                    .frame(width: outerDiameter, height: outerDiameter)
+                    .frame(width: Self.outerDiameter, height: Self.outerDiameter)
                 Circle()
                     .fill(Color.white)
-                    .frame(width: innerDiameter, height: innerDiameter)
+                    .frame(width: Self.innerDiameter, height: Self.innerDiameter)
                     .scaleEffect(isBusy ? 0.82 : 1)
                 if isBusy {
                     ProgressView()
