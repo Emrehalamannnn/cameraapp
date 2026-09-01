@@ -254,11 +254,12 @@ struct CameraView: View {
                 model.clearReference()
             }
         } else {
+            // Read the rotation before handing a closure to the picker: the
+            // label closure is Sendable, and touching main-actor state from
+            // inside it is an error under the Swift 6 language mode.
+            let rotation = model.orientation.controlRotation
             PhotosPicker(selection: $referenceItem, matching: .images, photoLibrary: .shared()) {
-                GlassCircleLabel(
-                    systemImage: "photo.on.rectangle",
-                    rotation: model.orientation.controlRotation
-                )
+                GlassCircleLabel(systemImage: "photo.on.rectangle", rotation: rotation)
             }
             .accessibilityLabel(Text("Match a reference photo"))
         }
