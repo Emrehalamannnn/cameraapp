@@ -13,8 +13,11 @@ struct PhotoReviewView: View {
     let review: CameraModel.PhotoReview
     let isSaving: Bool
     let isPhotoAccessDenied: Bool
+    var isEnhancing: Bool = false
+    var isShowingEnhanced: Bool = false
     let onRetake: () -> Void
     let onSave: () -> Void
+    var onToggleEnhancement: () -> Void = {}
 
     var body: some View {
         ZStack {
@@ -39,6 +42,9 @@ struct PhotoReviewView: View {
                         .padding(.horizontal, 24)
                         .padding(.bottom, 18)
                 }
+
+                enhanceControl
+                    .padding(.bottom, 14)
 
                 HStack {
                     Button(action: onRetake) {
@@ -79,6 +85,38 @@ struct PhotoReviewView: View {
                 .padding(.bottom, 10)
             }
         }
+    }
+
+    /// Enhancement is opt-in and reversible: the original is always kept, and
+    /// the button says which version is on screen.
+    private var enhanceControl: some View {
+        Button(action: onToggleEnhancement) {
+            HStack(spacing: 7) {
+                if isEnhancing {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(.white)
+                } else {
+                    Image(systemName: isShowingEnhanced ? "wand.and.stars" : "wand.and.stars.inverse")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                Text(isShowingEnhanced ? "Enhanced" : "Enhance")
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+            }
+            .foregroundStyle(isShowingEnhanced ? Color.black : Color.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 9)
+            .background {
+                Capsule().fill(
+                    isShowingEnhanced
+                        ? AnyShapeStyle(Color.readyAccent)
+                        : AnyShapeStyle(Material.ultraThin)
+                )
+            }
+        }
+        .buttonStyle(PressableButtonStyle())
+        .disabled(isEnhancing || isSaving)
+        .accessibilityLabel(Text(isShowingEnhanced ? "Show original" : "Enhance photo"))
     }
 
     private var photoAccessNotice: some View {

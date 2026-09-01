@@ -43,11 +43,14 @@ struct CameraView: View {
 
             if let review = model.review {
                 PhotoReviewView(
-                    review: review,
+                    review: model.displayedReview ?? review,
                     isSaving: model.isSaving,
                     isPhotoAccessDenied: model.isPhotoAccessDenied,
+                    isEnhancing: model.isEnhancing,
+                    isShowingEnhanced: model.isShowingEnhanced,
                     onRetake: { model.retakePhoto() },
-                    onSave: { model.saveReviewedPhoto() }
+                    onSave: { model.saveReviewedPhoto() },
+                    onToggleEnhancement: { model.toggleEnhancement() }
                 )
                 .transition(.opacity)
                 .zIndex(2)

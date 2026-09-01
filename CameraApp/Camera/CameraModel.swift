@@ -349,13 +349,15 @@ final class CameraModel {
 
     func retakePhoto() {
         review = nil
+        enhancedReview = nil
+        isShowingEnhanced = false
         isPhotoAccessDenied = false
         resetAutoCapture(requiresReadyExit: true)
         Task { await captureService.setAnalysisEnabled(true) }
     }
 
     func saveReviewedPhoto() {
-        guard let review, !isSaving else { return }
+        guard let review = displayedReview, !isSaving else { return }
         isSaving = true
 
         Task {
@@ -368,6 +370,8 @@ final class CameraModel {
             do {
                 try await mediaLibrary.save(review.photo)
                 self.review = nil
+                enhancedReview = nil
+                isShowingEnhanced = false
                 isPhotoAccessDenied = false
                 resetAutoCapture(requiresReadyExit: true)
                 await captureService.setAnalysisEnabled(true)
@@ -445,6 +449,62 @@ final class CameraModel {
         if isReadySettled != settled {
             isReadySettled = settled
         }
+    }
+
+    // MARK: - Enhancement
+
+    private(set) var isEnhancing = false
+    private(set) var enhancedReview: PhotoReview?
+    /// Which version the review screen is showing. The original is the default,
+    /// always kept, and never overwritten.
+    private(set) var isShowingEnhanced = false
+
+    /// The version the user is looking at, and therefore the one Save keeps.
+    var displayedReview: PhotoReview? {
+        isShowingEnhanced ? (enhancedReview ?? review) : review
+    }
+
+    /// Enhances on first use, then toggles between the two versions.
+    func toggleEnhancement() {
+        guard let review, !isEnhancing else { return }
+
+        if enhancedReview != nil {
+            isShowingEnhanced.toggle()
+            Haptics.shared.selectionSignal()
+            return
+        }
+
+        isEnhancing = true
+        Task {
+            defer { isEnhancing = false }
+            guard let enhanced = await Self.makeEnhanced(from: review.photo) else {
+                present(message: "Already looks good")
+                return
+            }
+            let image = await enhanced.makePreviewImage(maxDimension: 2200)
+            enhancedReview = PhotoReview(photo: enhanced, image: image)
+            isShowingEnhanced = true
+            Haptics.shared.selectionSignal()
+        }
+    }
+
+    /// Measures the photo, plans a conservative adjustment and applies it —
+    /// all on device, and always as a second copy rather than in place.
+    private static func makeEnhanced(from photo: CapturedPhoto) async -> CapturedPhoto? {
+        await Task.detached(priority: .userInitiated) { () -> CapturedPhoto? in
+            guard let image = photo.makeScoringImage(maxDimension: 512),
+                  let gray = ShotScorer.grayPixels(for: image) else { return nil }
+            let statistics = ImageStatistics.measure(grayPixels: gray.pixels)
+            let plan = EnhancementPlanner.plan(for: statistics)
+            guard let data = PhotoEnhancer().enhance(data: photo.data, plan: plan) else {
+                return nil
+            }
+            return CapturedPhoto(
+                data: data,
+                uniformTypeIdentifier: photo.uniformTypeIdentifier,
+                isMirrored: photo.isMirrored
+            )
+        }.value
     }
 
     // MARK: - Reference framing
