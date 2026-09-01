@@ -6,6 +6,7 @@
 //
 
 import AVFoundation
+import PhotosUI
 import SwiftUI
 
 struct CameraView: View {
@@ -15,6 +16,7 @@ struct CameraView: View {
     /// Size of the preview surface itself — measured after safe areas are
     /// ignored, so it matches the AVCaptureVideoPreviewLayer's own bounds.
     @State private var previewSize: CGSize = .zero
+    @State private var referenceItem: PhotosPickerItem?
 
     init(model: CameraModel) {
         self.model = model
@@ -55,6 +57,15 @@ struct CameraView: View {
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
         .task { await model.start() }
+        .onChange(of: referenceItem) { _, item in
+            guard let item else { return }
+            Task {
+                if let data = try? await item.loadTransferable(type: Data.self) {
+                    await model.setReference(imageData: data)
+                }
+                referenceItem = nil
+            }
+        }
     }
 
     // MARK: - Camera interface
@@ -188,6 +199,8 @@ struct CameraView: View {
 
             Spacer(minLength: 0)
 
+            referenceControl
+
             GlassCircleButton(
                 systemImage: model.isBestShotEnabled ? "square.stack.fill" : "square.stack",
                 accessibilityLabel: model.isBestShotEnabled
@@ -221,6 +234,30 @@ struct CameraView: View {
             #else
             gridButton
             #endif
+        }
+    }
+
+    /// Reference framing. Picking goes through the system photo picker, which
+    /// hands over one image without the app ever gaining library access.
+    @ViewBuilder
+    private var referenceControl: some View {
+        if model.isMatchingReference {
+            GlassCircleButton(
+                systemImage: "photo.fill.on.rectangle.fill",
+                accessibilityLabel: "Clear reference framing",
+                isHighlighted: true,
+                rotation: model.orientation.controlRotation
+            ) {
+                model.clearReference()
+            }
+        } else {
+            PhotosPicker(selection: $referenceItem, matching: .images, photoLibrary: .shared()) {
+                GlassCircleLabel(
+                    systemImage: "photo.on.rectangle",
+                    rotation: model.orientation.controlRotation
+                )
+            }
+            .accessibilityLabel(Text("Match a reference photo"))
         }
     }
 

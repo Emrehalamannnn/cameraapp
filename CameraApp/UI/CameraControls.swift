@@ -39,6 +39,37 @@ struct GlassCircleButton: View {
     }
 }
 
+/// The visual half of `GlassCircleButton`, for places that supply their own
+/// tap handling — the system photo picker, for instance.
+struct GlassCircleLabel: View {
+
+    let systemImage: String
+    var isHighlighted: Bool = false
+    var diameter: CGFloat = 42
+    var rotation: Angle = .zero
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.system(size: diameter * 0.38, weight: .semibold))
+            .foregroundStyle(isHighlighted ? Color.black : Color.white)
+            .rotationEffect(rotation)
+            .frame(width: diameter, height: diameter)
+            .background {
+                Circle().fill(
+                    isHighlighted
+                        ? AnyShapeStyle(Color.white.opacity(0.92))
+                        : AnyShapeStyle(Material.ultraThin)
+                )
+            }
+            .overlay {
+                Circle().strokeBorder(
+                    Color.white.opacity(isHighlighted ? 0 : 0.12),
+                    lineWidth: 0.5
+                )
+            }
+    }
+}
+
 struct PressableButtonStyle: ButtonStyle {
     var pressedScale: CGFloat = 0.9
 

@@ -28,6 +28,7 @@ actor FrameAnalysisService {
     private var configuration: AnalysisConfiguration
     private var subjectPolicy: SubjectPolicy = .face
     private var usesBodyPose = false
+    private var compositionTarget: CompositionTarget = .neutral
     /// Built lazily: modes that never ask for pose should not pay to set it up.
     private lazy var bodyPoseAnalyzer = BodyPoseAnalyzer()
 
@@ -61,6 +62,13 @@ actor FrameAnalysisService {
         usesBodyPose = mode.usesBodyPose
         previousComposition = nil
         previousLevel = nil
+    }
+
+    /// Aims the framing rules at a reference photo's composition, or back at
+    /// the mode's own defaults when cleared.
+    func setCompositionTarget(_ target: CompositionTarget) {
+        compositionTarget = target
+        previousComposition = nil
     }
 
     func start() {
@@ -117,7 +125,8 @@ actor FrameAnalysisService {
             isMirrored: context.isMirrored,
             previous: previousComposition,
             configuration: configuration,
-            subjectPolicy: subjectPolicy
+            subjectPolicy: subjectPolicy,
+            target: compositionTarget
         )
         // Full-body framing is the only thing that needs joints, and it is the
         // most expensive pass here, so it runs only when the mode asks.

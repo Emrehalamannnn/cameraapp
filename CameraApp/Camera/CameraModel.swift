@@ -11,7 +11,9 @@
 //
 
 import AVFoundation
+import CoreGraphics
 import Foundation
+import ImageIO
 import Observation
 import Photos
 import QuartzCore
@@ -445,6 +447,54 @@ final class CameraModel {
         }
     }
 
+    // MARK: - Reference framing
+
+    /// Framing lifted from a reference photo, or `nil` when shooting free.
+    private(set) var referenceFraming: ReferenceFraming?
+
+    var isMatchingReference: Bool { referenceFraming?.hasSubject == true }
+
+    /// Reads a reference photo's framing and aims the guidance at it.
+    ///
+    /// The image arrives from the system picker, so the app never gains access
+    /// to the photo library, and the analysis happens on device.
+    func setReference(imageData: Data) async {
+        let framing = await Task.detached(priority: .userInitiated) { () -> ReferenceFraming in
+            guard let source = CGImageSourceCreateWithData(imageData as CFData, nil),
+                  let image = CGImageSourceCreateThumbnailAtIndex(
+                      source,
+                      0,
+                      [
+                          kCGImageSourceCreateThumbnailFromImageAlways: true,
+                          kCGImageSourceCreateThumbnailWithTransform: true,
+                          kCGImageSourceThumbnailMaxPixelSize: 1024
+                      ] as CFDictionary
+                  ) else { return .none }
+            return ReferenceFramingExtractor.extract(from: image)
+        }.value
+
+        guard framing.hasSubject else {
+            present(message: "No subject found in that photo")
+            return
+        }
+
+        referenceFraming = framing
+        guidanceEngine = GuidanceEngine(configuration: analysisConfiguration)
+        resetAutoCapture(requiresReadyExit: true)
+        await analysisService.setCompositionTarget(framing.target)
+        present(message: "Matching reference framing")
+    }
+
+    func clearReference() {
+        guard referenceFraming != nil else { return }
+        referenceFraming = nil
+        guidanceEngine = GuidanceEngine(configuration: analysisConfiguration)
+        resetAutoCapture(requiresReadyExit: true)
+        Haptics.shared.selectionSignal()
+        Task { await analysisService.setCompositionTarget(.neutral) }
+        present(message: "Reference cleared")
+    }
+
     // MARK: - Best shot
 
     func toggleBestShot() {
@@ -493,7 +543,14 @@ final class CameraModel {
         resetAutoCapture(requiresReadyExit: true)
         Haptics.shared.selectionSignal()
 
-        Task { await analysisService.setMode(mode) }
+        Task {
+            await analysisService.setMode(mode)
+            // A mode change resets the analyser's target, so re-apply any
+            // reference the user is still shooting against.
+            if let target = referenceFraming?.target {
+                await analysisService.setCompositionTarget(target)
+            }
+        }
         present(message: mode.title)
     }
 

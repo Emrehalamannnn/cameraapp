@@ -25,7 +25,8 @@ enum CompositionEvaluator {
         isMirrored: Bool,
         previous: CompositionAssessment? = nil,
         configuration: AnalysisConfiguration = .standard,
-        subjectPolicy: SubjectPolicy = .face
+        subjectPolicy: SubjectPolicy = .face,
+        target: CompositionTarget = .neutral
     ) -> CompositionAssessment {
         // In scene modes a face in shot is a bystander, not the subject, so
         // face geometry says nothing about whether the frame is well composed.
@@ -58,21 +59,35 @@ enum CompositionEvaluator {
         let confidence = reliableFaces.reduce(Float.zero) { $0 + $1.confidence }
             / Float(reliableFaces.count)
 
+        // A reference photo replaces the default target — centred, with the
+        // mode's own bands — but the rules applied to it are the same ones.
+        let scaleFault = ReferenceMatcher.scaleCorrection(fill: fill, target: target)
+        let headroomFault = ReferenceMatcher.headroomCorrection(headroom: headroom, target: target)
+        let offsetFromTarget = offset - target.horizontalOffset
+
         let state: CompositionState
         if edgeClearance < configuration.edgeSafetyMargin {
             state = .dangerousEdge
-        } else if fill > maximumFillThreshold(previous: previous, configuration: configuration) {
+        } else if let scaleFault {
+            state = scaleFault
+        } else if target.subjectFill == nil,
+                  fill > maximumFillThreshold(previous: previous, configuration: configuration) {
             state = .subjectTooClose
-        } else if fill < minimumFillThreshold(previous: previous, configuration: configuration) {
+        } else if target.subjectFill == nil,
+                  fill < minimumFillThreshold(previous: previous, configuration: configuration) {
             state = .subjectTooFar
-        } else if headroom < minimumHeadroomThreshold(previous: previous, configuration: configuration) {
+        } else if let headroomFault {
+            state = headroomFault
+        } else if target.headroom == nil,
+                  headroom < minimumHeadroomThreshold(previous: previous, configuration: configuration) {
             state = .insufficientHeadroom
-        } else if headroom > maximumHeadroomThreshold(previous: previous, configuration: configuration) {
+        } else if target.headroom == nil,
+                  headroom > maximumHeadroomThreshold(previous: previous, configuration: configuration) {
             state = .excessiveHeadroom
-        } else if abs(offset) > horizontalThreshold(previous: previous, configuration: configuration) {
+        } else if abs(offsetFromTarget) > horizontalThreshold(previous: previous, configuration: configuration) {
             // The subject sits left of centre, so the frame has to travel left
             // to catch up with them — unless the preview is mirrored.
-            let nudge: HorizontalNudge = offset < 0 ? .left : .right
+            let nudge: HorizontalNudge = offsetFromTarget < 0 ? .left : .right
             state = .offCenter(isMirrored ? nudge.inverted : nudge)
         } else {
             state = .balanced
