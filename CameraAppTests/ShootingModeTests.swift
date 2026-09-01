@@ -224,3 +224,67 @@ final class GuidanceDirectionTests: XCTestCase {
         XCTAssertEqual(GuidanceMessage.moveRight.direction, .right)
     }
 }
+
+final class BodyPoseRulesTests: XCTestCase {
+
+    private let configuration = ShootingMode.outfit.configuration
+
+    func testWholeBodyInFrameIsNotACrop() {
+        let body = BodyObservation(
+            boundingBox: CGRect(x: 0.3, y: 0.1, width: 0.4, height: 0.8),
+            confidence: 0.9,
+            lowestJointY: 0.12,
+            lowestJoint: .ankle,
+            hasFeetInFrame: true
+        )
+        XCTAssertEqual(BodyPoseRules.crop(for: body, configuration: configuration), .none)
+    }
+
+    /// The classic accidental-looking crop: the frame cuts exactly at the knee.
+    func testCropExactlyThroughTheKneeIsFlagged() {
+        let body = BodyObservation(
+            boundingBox: CGRect(x: 0.3, y: 0.0, width: 0.4, height: 0.9),
+            confidence: 0.9,
+            lowestJointY: 0.02,
+            lowestJoint: .knee,
+            hasFeetInFrame: false
+        )
+        XCTAssertEqual(
+            BodyPoseRules.crop(for: body, configuration: configuration),
+            .throughJoint(.knee)
+        )
+    }
+
+    func testCropWellAboveTheJointReadsAsDeliberate() {
+        // Cutting mid-thigh looks intentional, so the app stays quiet.
+        let body = BodyObservation(
+            boundingBox: CGRect(x: 0.3, y: 0.2, width: 0.4, height: 0.7),
+            confidence: 0.9,
+            lowestJointY: 0.3,
+            lowestJoint: .knee,
+            hasFeetInFrame: false
+        )
+        XCTAssertEqual(BodyPoseRules.crop(for: body, configuration: configuration), .clean)
+    }
+
+    func testLowConfidenceBodyIsIgnoredRatherThanGuessedAt() {
+        let body = BodyObservation(
+            boundingBox: CGRect(x: 0.3, y: 0.0, width: 0.4, height: 0.9),
+            confidence: 0.1,
+            lowestJointY: 0.01,
+            lowestJoint: .ankle,
+            hasFeetInFrame: false
+        )
+        XCTAssertEqual(BodyPoseRules.crop(for: body, configuration: configuration), .none)
+    }
+
+    func testOnlyOutfitModeRunsTheExpensivePosePass() {
+        for mode in ShootingMode.allCases {
+            XCTAssertEqual(
+                mode.usesBodyPose,
+                mode == .outfit,
+                "\(mode.title) should not pay for a pose pass it does not use"
+            )
+        }
+    }
+}

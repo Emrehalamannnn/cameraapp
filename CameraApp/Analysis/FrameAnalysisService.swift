@@ -27,6 +27,9 @@ actor FrameAnalysisService {
     private let motionMonitor = MotionMonitor()
     private var configuration: AnalysisConfiguration
     private var subjectPolicy: SubjectPolicy = .face
+    private var usesBodyPose = false
+    /// Built lazily: modes that never ask for pose should not pay to set it up.
+    private lazy var bodyPoseAnalyzer = BodyPoseAnalyzer()
 
     private var previousGrid: [Float]?
     private var previousComposition: CompositionAssessment?
@@ -55,6 +58,7 @@ actor FrameAnalysisService {
     func setMode(_ mode: ShootingMode) {
         configuration = mode.configuration
         subjectPolicy = mode.subjectPolicy
+        usesBodyPose = mode.usesBodyPose
         previousComposition = nil
         previousLevel = nil
     }
@@ -115,6 +119,11 @@ actor FrameAnalysisService {
             configuration: configuration,
             subjectPolicy: subjectPolicy
         )
+        // Full-body framing is the only thing that needs joints, and it is the
+        // most expensive pass here, so it runs only when the mode asks.
+        let body = usesBodyPose
+            ? bodyPoseAnalyzer.analyze(pixelBuffer: pixelBuffer, orientation: context.orientation)
+            : nil
         let level = LevelEstimator.evaluate(
             motion: motion,
             orientation: context.orientation,
@@ -141,7 +150,8 @@ actor FrameAnalysisService {
                 composition: composition,
                 isMirrored: context.isMirrored,
                 level: level,
-                quality: quality
+                quality: quality,
+                body: body
             )
         )
     }

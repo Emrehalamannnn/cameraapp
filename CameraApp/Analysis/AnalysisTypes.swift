@@ -203,6 +203,9 @@ struct FrameAnalysis: Sendable, Equatable {
     var isMirrored: Bool
     var level: LevelAssessment = .unavailable
     var quality: ShotQualityAssessment = .unknown
+    /// Body joints, in modes that ask for them. `nil` everywhere else, which is
+    /// what keeps portraits and scenes from paying for a pose pass.
+    var body: BodyObservation?
 
     /// The largest detected face, which the guidance logic treats as the subject.
     var primaryFace: DetectedFace? { faces.first }

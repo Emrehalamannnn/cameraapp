@@ -26,6 +26,7 @@ enum GuidanceMessage: String, Sendable, Equatable, CaseIterable {
     case lowerCamera = "Lower camera"
     case reframeSubject = "Keep subject in frame"
     case straightenCamera = "Straighten camera"
+    case fitWholeBody = "Fit the whole body"
     case ready = "Ready"
 
     var isReady: Bool { self == .ready }
@@ -44,6 +45,7 @@ enum GuidanceMessage: String, Sendable, Equatable, CaseIterable {
         case .lowerCamera: return .down
         case .stepBack: return .back
         case .moveCloser: return .closer
+        case .fitWholeBody: return .back
         case .moreLight, .tooMuchLight, .holdStill, .reframeSubject,
              .straightenCamera, .ready:
             return .none
@@ -94,7 +96,10 @@ struct GuidanceEngine {
     private var candidate: GuidanceMessage?
     private var candidateSince: TimeInterval = 0
 
+    private let configuration: AnalysisConfiguration
+
     init(configuration: AnalysisConfiguration = .standard) {
+        self.configuration = configuration
         dwell = configuration.guidanceDwell
         readyDwell = configuration.readyDwell
         exitReadyDwell = configuration.exitReadyDwell
@@ -102,7 +107,10 @@ struct GuidanceEngine {
 
     /// Priority order: light, then steadiness, then framing. Only one thing is
     /// ever wrong "first", which is what keeps the UI quiet.
-    static func target(for analysis: FrameAnalysis) -> GuidanceMessage {
+    static func target(
+        for analysis: FrameAnalysis,
+        configuration: AnalysisConfiguration = .standard
+    ) -> GuidanceMessage {
         switch analysis.lighting.quality {
         case .tooDark, .dim:
             return .moreLight
@@ -114,6 +122,14 @@ struct GuidanceEngine {
 
         if !analysis.stability.level.isAcceptable {
             return .holdStill
+        }
+
+        // A frame that cuts straight through a knee or an ankle reads as an
+        // accident, and backing off fixes it. Only ever consulted in modes that
+        // actually ran the pose pass.
+        if let body = analysis.body,
+           case .throughJoint = BodyPoseRules.crop(for: body, configuration: configuration) {
+            return .fitWholeBody
         }
 
         switch analysis.composition.state {
@@ -146,7 +162,7 @@ struct GuidanceEngine {
     /// Feeds one analysis to the engine.
     /// - Parameter now: monotonic time in seconds, injected for testability.
     mutating func update(with analysis: FrameAnalysis, now: TimeInterval) -> GuidanceUpdate {
-        let target = Self.target(for: analysis)
+        let target = Self.target(for: analysis, configuration: configuration)
 
         // The first corrective instruction appears immediately — telling someone
         // the room is dark should not wait. Ready is always earned.

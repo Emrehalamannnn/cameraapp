@@ -81,6 +81,13 @@ enum ShootingMode: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// Whether the mode runs the body-pose pass. Only full-body framing needs
+    /// it, and it is the most expensive thing in the pipeline, so nothing else
+    /// pays for it.
+    var usesBodyPose: Bool {
+        self == .outfit
+    }
+
     /// Modes where a grid genuinely helps are switched on by default.
     var prefersGrid: Bool {
         switch self {
