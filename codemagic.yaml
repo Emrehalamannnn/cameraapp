@@ -51,7 +51,7 @@ workflows:
               -scheme "$XCODE_SCHEME" \
               -configuration Release \
               -showBuildSettings \
-              | awk '/PRODUCT_BUNDLE_IDENTIFIER =/ { print $3; exit }'
+              | awk '/^[[:space:]]*PRODUCT_BUNDLE_IDENTIFIER =/ { print $3; exit }'
           )
 
           if [ "$PROJECT_BUNDLE_ID" != "$BUNDLE_ID" ]; then
