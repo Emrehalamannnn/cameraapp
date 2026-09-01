@@ -97,20 +97,26 @@ workflows:
           set -euo pipefail
 
           LATEST_BUILD_NUMBER=$(
-            app-store-connect get-latest-build-number "$APP_STORE_APPLE_ID"
+            app-store-connect get-latest-build-number \
+              --all-versions \
+              "$APP_STORE_APPLE_ID"
           )
 
           case "$LATEST_BUILD_NUMBER" in
-            ""|*[!0-9]*)
+            "")
+              NEXT_BUILD_NUMBER="$CM_BUILD_NUMBER"
+              ;;
+            *[!0-9]*)
               echo "Could not determine the latest App Store Connect build number."
               exit 1
               ;;
+            *)
+              NEXT_BUILD_NUMBER=$((LATEST_BUILD_NUMBER + 1))
+              if [ "$CM_BUILD_NUMBER" -gt "$NEXT_BUILD_NUMBER" ]; then
+                NEXT_BUILD_NUMBER="$CM_BUILD_NUMBER"
+              fi
+              ;;
           esac
-
-          NEXT_BUILD_NUMBER=$((LATEST_BUILD_NUMBER + 1))
-          if [ "$CM_BUILD_NUMBER" -gt "$NEXT_BUILD_NUMBER" ]; then
-            NEXT_BUILD_NUMBER="$CM_BUILD_NUMBER"
-          fi
 
           cd "$CM_BUILD_DIR"
           agvtool new-version -all "$NEXT_BUILD_NUMBER"
