@@ -22,12 +22,14 @@ struct DebugOverlayView: View {
     let faces: [DetectedFace]
     let geometry: PreviewGeometry
     let configuration: AnalysisConfiguration
+    let subscription: SubscriptionService
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             compositionRegions
             boxes
             readout
+            testPremiumToggle
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -118,6 +120,31 @@ struct DebugOverlayView: View {
         case .critical: return "critical"
         case .correctable: return "correctable"
         case .good: return "good"
+        }
+    }
+
+    /// Development/testing only — flips `DebugPremiumOverride`. The rest of
+    /// this overlay is display-only and deliberately not hit-testable; this
+    /// is the one control that needs to be.
+    private var testPremiumToggle: some View {
+        VStack {
+            Spacer()
+            HStack {
+                Spacer()
+                Button {
+                    subscription.debugToggleTestPremium()
+                } label: {
+                    Text(subscription.status.isPro ? "TEST PRO: ON" : "TEST PRO: OFF")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Capsule().fill(subscription.status.isPro ? Color.yellow : Color.white.opacity(0.7)))
+                }
+                .allowsHitTesting(true)
+                .padding(.trailing, 16)
+                .padding(.bottom, 140)
+            }
         }
     }
 

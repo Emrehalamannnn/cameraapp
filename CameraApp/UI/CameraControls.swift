@@ -85,6 +85,8 @@ struct PressableButtonStyle: ButtonStyle {
 
 struct ShutterButton: View {
 
+    var isVideoMode: Bool = false
+    var isRecording: Bool = false
     let isReady: Bool
     let isBusy: Bool
     let isEnabled: Bool
@@ -93,14 +95,22 @@ struct ShutterButton: View {
 
     private static let outerDiameter: CGFloat = 76
     private static let innerDiameter: CGFloat = 62
+    /// The red record glyph shrinks to this while recording, the same way
+    /// the system camera's does — a visual cue distinct from the plain white
+    /// disc, readable at a glance without any text.
+    private static let recordingGlyphDiameter: CGFloat = 30
+
+    private var ringColor: Color {
+        isVideoMode ? (isRecording ? Color.red : Color.white.opacity(0.9)) : (isReady ? Color.readyAccent : Color.white.opacity(0.9))
+    }
 
     var body: some View {
         Button(action: action) {
             ZStack {
                 Circle()
-                    .strokeBorder(isReady ? Color.readyAccent : Color.white.opacity(0.9), lineWidth: 3)
+                    .strokeBorder(ringColor, lineWidth: 3)
                     .frame(width: Self.outerDiameter, height: Self.outerDiameter)
-                if autoCaptureProgress > 0, !isBusy {
+                if autoCaptureProgress > 0, !isBusy, !isVideoMode {
                     Circle()
                         .trim(from: 0, to: min(max(autoCaptureProgress, 0), 1))
                         .stroke(
@@ -111,28 +121,40 @@ struct ShutterButton: View {
                         .frame(width: Self.outerDiameter, height: Self.outerDiameter)
                         .animation(.linear(duration: 0.1), value: autoCaptureProgress)
                 }
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: Self.innerDiameter, height: Self.innerDiameter)
-                    .scaleEffect(isBusy ? 0.82 : 1)
-                if isBusy {
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                        .tint(.black)
+                if isVideoMode {
+                    RoundedRectangle(cornerRadius: isRecording ? 8 : Self.recordingGlyphDiameter / 2, style: .continuous)
+                        .fill(Color.red)
+                        .frame(
+                            width: isRecording ? Self.recordingGlyphDiameter * 0.7 : Self.recordingGlyphDiameter,
+                            height: isRecording ? Self.recordingGlyphDiameter * 0.7 : Self.recordingGlyphDiameter
+                        )
+                } else {
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: Self.innerDiameter, height: Self.innerDiameter)
+                        .scaleEffect(isBusy ? 0.82 : 1)
+                    if isBusy {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .tint(.black)
+                    }
                 }
             }
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isReady)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isRecording)
             .animation(.easeOut(duration: 0.18), value: isBusy)
         }
         .buttonStyle(PressableButtonStyle(pressedScale: 0.93))
         .disabled(!isEnabled || isBusy)
         .opacity(isEnabled ? 1 : 0.5)
-        .accessibilityLabel(Text("Take photo"))
+        .accessibilityLabel(Text(isVideoMode ? (isRecording ? "Stop recording" : "Start recording") : "Take photo"))
         .accessibilityHint(
             Text(
-                autoCaptureProgress > 0
-                    ? "Auto Capture is preparing to take the photo"
-                    : (isReady ? "The shot is ready" : "Framing guidance is still adjusting")
+                isVideoMode
+                    ? (isRecording ? "Recording is in progress" : "Starts recording video")
+                    : (autoCaptureProgress > 0
+                        ? "Auto Capture is preparing to take the photo"
+                        : (isReady ? "The shot is ready" : "Framing guidance is still adjusting"))
             )
         )
     }

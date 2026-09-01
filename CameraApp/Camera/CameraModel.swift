@@ -36,6 +36,22 @@ final class CameraModel {
         var isRunning: Bool { self == .running }
     }
 
+    /// Photo or video. Switching is only allowed at rest — mid-capture, and
+    /// especially mid-recording, is not a moment to change what the shutter
+    /// button means.
+    enum CaptureMode: String, CaseIterable, Identifiable, Sendable {
+        case photo
+        case video
+
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .photo: return "Photo"
+            case .video: return "Video"
+            }
+        }
+    }
+
     struct PhotoReview: Identifiable, Equatable {
         let id = UUID()
         let photo: CapturedPhoto
@@ -77,6 +93,10 @@ final class CameraModel {
     private(set) var isSwitchingCamera = false
     private(set) var isSaving = false
     private(set) var isInterrupted = false
+    /// Photo or video. Photo until the user chooses otherwise.
+    private(set) var captureMode: CaptureMode = .photo
+    private(set) var isRecordingVideo = false
+    private(set) var recordingElapsedSeconds = 0
     private(set) var review: PhotoReview?
     private(set) var focusIndicator: FocusIndicator?
     /// Exposure compensation in stops. Survives the focus square fading, so
@@ -87,6 +107,7 @@ final class CameraModel {
     private(set) var isPhotoAccessDenied = false
     var isAutoCaptureEnabled: Bool {
         settings.isAutoCaptureEnabled
+            && captureMode == .photo
             && PremiumGate.isAvailable(.autoCapture, status: subscription.status)
     }
     /// Reference framing is Pro. Exposed so the control can go straight to the
@@ -175,6 +196,7 @@ final class CameraModel {
     @ObservationIgnored private var autoCaptureController: AutoCaptureController
     @ObservationIgnored private var readyShownAt: TimeInterval?
     @ObservationIgnored private var countdownTask: Task<Void, Never>?
+    @ObservationIgnored private var recordingTimerTask: Task<Void, Never>?
     /// Preferences live outside the model: it reads them, it does not own them.
     @ObservationIgnored let settings: CameraSettings
     @ObservationIgnored let subscription: SubscriptionService
@@ -283,6 +305,9 @@ final class CameraModel {
         resetAutoCapture(requiresReadyExit: true)
         // A timer that kept running would fire the shutter at a pocket.
         cancelCountdown()
+        // Whatever was recorded so far is worth keeping — the camera is
+        // about to be released, and no more frames are coming.
+        finalizeRecordingForInterruption()
         orientation.stop()
         // The analysis consumer is deliberately left running: an AsyncStream is
         // single-shot, and cancelling its consumer would tear the pipeline down
@@ -316,7 +341,7 @@ final class CameraModel {
     }
 
     func switchCamera() {
-        guard status.isRunning, !isSwitchingCamera, !isCapturing else { return }
+        guard status.isRunning, !isSwitchingCamera, !isCapturing, !isRecordingVideo else { return }
         isSwitchingCamera = true
         signalSelection()
         faces = []
@@ -418,9 +443,21 @@ final class CameraModel {
         }
     }
 
+    // MARK: - Capture mode
+
+    /// Switches between Photo and Video. Refused mid-capture or mid-review —
+    /// changing what the shutter button does while it is already doing
+    /// something would be confusing at best.
+    func setCaptureMode(_ mode: CaptureMode) {
+        guard mode != captureMode, !isCapturing, !isRecordingVideo, !isReviewing, countdownTask == nil else { return }
+        captureMode = mode
+        signalSelection()
+    }
+
     // MARK: - Capture
 
     func capturePhoto() {
+        guard captureMode == .photo else { return }
         resetAutoCapture(requiresReadyExit: true)
 
         // A second press during the countdown cancels it. Anything else would
@@ -491,25 +528,43 @@ final class CameraModel {
         }
     }
 
-    /// One frame, or the best of a short burst when Best Shot is on.
+    /// One frame, or the best of a short burst when Best Shot is on. Every
+    /// frame that can end up on screen or saved is cropped to the app's true
+    /// 9:16 frame before it goes any further, so nothing wider ever reaches
+    /// the review screen or the library.
     private func capturePreferredPhoto() async throws -> CapturedPhoto {
         guard isBestShotEnabled, analysisConfiguration.burstFrameCount > 1 else {
-            return try await captureService.capturePhoto(flashMode: flashMode)
+            let photo = try await captureService.capturePhoto(flashMode: flashMode)
+            return await Self.cropped(photo)
         }
         let photos = try await captureService.capturePhotoBurst(
             flashMode: flashMode,
             count: analysisConfiguration.burstFrameCount
         )
         guard let first = photos.first else { throw CameraError.photoDataUnavailable }
-        guard photos.count > 1 else { return first }
+        guard photos.count > 1 else { return await Self.cropped(first) }
 
         let shortlist = await Self.shortlist(from: photos, limit: 3)
-        guard let best = shortlist.photos.first else { return first }
-        burstCandidates = shortlist.photos
+        guard !shortlist.photos.isEmpty else { return await Self.cropped(first) }
+
+        var cropped: [CapturedPhoto] = []
+        for candidate in shortlist.photos {
+            cropped.append(await Self.cropped(candidate))
+        }
+        burstCandidates = cropped
         burstThumbnails = shortlist.thumbnails
         selectedCandidate = 0
         present(message: "Best of \(photos.count)")
-        return best
+        return cropped[0]
+    }
+
+    /// Crops one capture to the app's 9:16 frame, off the main actor — a
+    /// full-resolution decode, crop and re-encode is real work, and the
+    /// review screen is animating in while it happens.
+    private static func cropped(_ photo: CapturedPhoto) async -> CapturedPhoto {
+        await Task.detached(priority: .userInitiated) {
+            PhotoCropper.cropToTargetAspect(photo)
+        }.value
     }
 
     private func clearBurstShortlist() {
@@ -551,6 +606,116 @@ final class CameraModel {
                 present(message: "Saved to Photos")
             } catch {
                 present(message: error.localizedDescription)
+            }
+        }
+    }
+
+    // MARK: - Video recording
+
+    /// The single entry point from the shutter button in Video mode: start
+    /// while idle, stop while recording. Kept as one action so the button
+    /// never needs to know which state it is in beyond what it already shows.
+    func toggleVideoRecording() {
+        if isRecordingVideo {
+            stopVideoRecording()
+        } else {
+            startVideoRecording()
+        }
+    }
+
+    private func startVideoRecording() {
+        guard captureMode == .video, status.isRunning, !isRecordingVideo,
+              !isCapturing, !isReviewing, !isSwitchingCamera else { return }
+        isRecordingVideo = true
+        recordingElapsedSeconds = 0
+        Haptics.shared.shutterSignal()
+
+        Task {
+            await captureService.setAnalysisEnabled(false)
+            do {
+                let handle = try await captureService.startRecording()
+                guard isRecordingVideo else {
+                    // Interrupted or backgrounded before the writer was
+                    // ready — undo what start just did rather than leave a
+                    // recording running with nobody watching it.
+                    _ = await captureService.stopRecording()
+                    return
+                }
+                if !handle.includesAudio, MicrophonePermission.access == .denied {
+                    present(message: "Recording without microphone — enable access in Settings")
+                }
+                startRecordingTimer()
+            } catch {
+                isRecordingVideo = false
+                await captureService.setAnalysisEnabled(!isReviewing)
+                present(message: error.localizedDescription)
+            }
+        }
+    }
+
+    func stopVideoRecording() {
+        finishRecording()
+    }
+
+    /// Called on interruption or backgrounding: whatever was captured so far
+    /// is worth keeping, so this finishes and saves the file rather than
+    /// throwing the footage away.
+    private func finalizeRecordingForInterruption() {
+        finishRecording()
+    }
+
+    private func finishRecording() {
+        guard isRecordingVideo else { return }
+        isRecordingVideo = false
+        recordingTimerTask?.cancel()
+        recordingTimerTask = nil
+        recordingElapsedSeconds = 0
+        Haptics.shared.shutterSignal()
+
+        Task {
+            let url = await captureService.stopRecording()
+            await captureService.setAnalysisEnabled(!isReviewing)
+            guard let url else {
+                present(message: "Recording was too short to save")
+                return
+            }
+            await saveRecordedVideo(at: url)
+        }
+    }
+
+    /// Video has no review step: it saves the moment it finishes, the same
+    /// way the shutter's own "Saved to Photos" toast reports success for a
+    /// photo once the user has confirmed it.
+    private func saveRecordedVideo(at url: URL) async {
+        isSaving = true
+        defer { isSaving = false }
+
+        let authorization = await mediaLibrary.requestAuthorization()
+        guard MediaLibraryService.isUsable(authorization) else {
+            isPhotoAccessDenied = true
+            present(message: "Recorded, but couldn't save — enable Photos access in Settings")
+            return
+        }
+        do {
+            try await mediaLibrary.saveVideo(at: url)
+            // Only removed once PhotoKit has confirmed the import — a save
+            // that fails leaves the file in place for the next launch's
+            // cleanup sweep rather than losing the only copy.
+            try? FileManager.default.removeItem(at: url)
+            isPhotoAccessDenied = false
+            present(message: "Video saved to Photos")
+        } catch {
+            present(message: "Recorded, but couldn't save: \(error.localizedDescription)")
+        }
+    }
+
+    private func startRecordingTimer() {
+        recordingTimerTask?.cancel()
+        recordingTimerTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled, let self else { return }
+                self.recordingElapsedSeconds += 1
             }
         }
     }
@@ -828,7 +993,7 @@ final class CameraModel {
     /// from the configuration, so a mode change is a data change rather than a
     /// branch scattered through the analysis code.
     func setShootingMode(_ mode: ShootingMode) {
-        guard mode != shootingMode else { return }
+        guard mode != shootingMode, !isRecordingVideo else { return }
         guard PremiumGate.isAvailable(mode, status: subscription.status) else {
             requestPaywall()
             return
@@ -935,6 +1100,7 @@ final class CameraModel {
 
     private func handleInterruption(_ notification: Notification) {
         isInterrupted = true
+        finalizeRecordingForInterruption()
         guidance = nil
         faces = []
         level = .unavailable
@@ -959,6 +1125,7 @@ final class CameraModel {
     }
 
     private func handleRuntimeError(_ notification: Notification) async {
+        finalizeRecordingForInterruption()
         guidance = nil
         faces = []
         level = .unavailable

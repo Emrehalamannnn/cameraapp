@@ -26,7 +26,12 @@ actor CaptureService {
     private let videoDataOutput = AVCaptureVideoDataOutput()
     private let frameProcessor: VideoFrameProcessor
 
+    private let audioOutput = AVCaptureAudioDataOutput()
+    private let audioProcessor = AudioFrameProcessor()
+    private let videoRecorder = VideoRecorder()
+
     private var activeInput: AVCaptureDeviceInput?
+    private var audioInput: AVCaptureDeviceInput?
     private var isConfigured = false
     private var zoomCapabilities: ZoomCapabilities = .unity
     private var captureRotationAngle: CGFloat = 90
@@ -457,5 +462,94 @@ actor CaptureService {
         settings.photoQualityPrioritization = photoOutput.maxPhotoQualityPrioritization
         settings.maxPhotoDimensions = photoOutput.maxPhotoDimensions
         return (settings, contentType)
+    }
+
+    // MARK: - Video recording
+
+    var isRecordingVideo: Bool {
+        get async { await videoRecorder.isRecording }
+    }
+
+    var recordingElapsedSeconds: Int {
+        get async { await videoRecorder.elapsedSeconds }
+    }
+
+    /// Starts a new recording. Requests microphone access if it has not been
+    /// asked for yet; a denial does not fail the recording, it just leaves
+    /// the file silent, which the caller reports honestly via
+    /// `includesAudio`.
+    func startRecording() async throws -> VideoRecordingHandle {
+        guard session.isRunning, currentDevice != nil else { throw CameraError.notRunning }
+        let alreadyRecording = await isRecordingVideo
+        guard !alreadyRecording else {
+            throw CameraError.captureFailed("A recording is already in progress.")
+        }
+
+        let microphoneAccess = await MicrophonePermission.requestAccess()
+        let wantsAudio = microphoneAccess == .granted
+        if wantsAudio {
+            attachAudioIfNeeded()
+        }
+        let includeAudio = wantsAudio && audioInput != nil
+
+        let url = try await videoRecorder.start(includeAudio: includeAudio)
+
+        let recorder = videoRecorder
+        frameProcessor.setRecordingSink { sampleBuffer, orientation in
+            Task { await recorder.appendVideo(sampleBuffer, orientation: orientation) }
+        }
+        if includeAudio {
+            audioProcessor.setSink { sampleBuffer in
+                Task { await recorder.appendAudio(sampleBuffer) }
+            }
+        }
+
+        return VideoRecordingHandle(fileURL: url, includesAudio: includeAudio)
+    }
+
+    /// Stops recording and returns the finished file, or `nil` if nothing
+    /// worth keeping was ever captured.
+    func stopRecording() async -> URL? {
+        frameProcessor.setRecordingSink(nil)
+        audioProcessor.setSink(nil)
+        let url = await videoRecorder.stop()
+        detachAudio()
+        return url
+    }
+
+    /// Adds the microphone input and its data output. The mic's privacy
+    /// indicator should only be lit while actually recording, so this is
+    /// called at the start of a recording rather than kept attached for the
+    /// life of the session.
+    private func attachAudioIfNeeded() {
+        guard audioInput == nil, let device = AVCaptureDevice.default(for: .audio) else { return }
+        guard let input = try? AVCaptureDeviceInput(device: device) else { return }
+
+        session.beginConfiguration()
+        defer { session.commitConfiguration() }
+
+        guard session.canAddInput(input) else { return }
+        session.addInput(input)
+
+        if !session.outputs.contains(audioOutput) {
+            guard session.canAddOutput(audioOutput) else {
+                session.removeInput(input)
+                return
+            }
+            audioOutput.setSampleBufferDelegate(audioProcessor, queue: audioProcessor.queue)
+            session.addOutput(audioOutput)
+        }
+        audioInput = input
+    }
+
+    private func detachAudio() {
+        guard let audioInput else { return }
+        session.beginConfiguration()
+        session.removeInput(audioInput)
+        if session.outputs.contains(audioOutput) {
+            session.removeOutput(audioOutput)
+        }
+        session.commitConfiguration()
+        self.audioInput = nil
     }
 }

@@ -16,6 +16,11 @@ struct CameraAppApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        // A recording whose Photos save failed is kept around rather than
+        // deleted, in case the library was only briefly unavailable — this
+        // is what stops those leftovers from accumulating forever.
+        TemporaryMediaCleanup.purgeStaleRecordings()
+
         let settings = CameraSettings()
         let subscription = SubscriptionService()
         _settings = State(initialValue: settings)

@@ -186,7 +186,7 @@ needs a sandbox account and real products in App Store Connect.
 
 ### Paywall
 
-- Confirm each plan shows a real store price, not the `$12.99 / $9.99 / $14.99`
+- Confirm each plan shows a real store price, not the `$2.99 / $9.99 / $14.99`
   fallbacks. Fallbacks on a device with a working store means the product IDs
   do not match App Store Connect.
 - Confirm the per-month line and the SAVE badge agree with the prices shown,

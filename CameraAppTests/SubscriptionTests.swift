@@ -101,7 +101,7 @@ final class SubscriptionPricingTests: XCTestCase {
         // Not the real prices — StoreKit supplies those — but the figures the
         // paywall shows when the store cannot be reached, and they should not
         // drift from what was agreed.
-        XCTAssertEqual(SubscriptionPlan.monthly.fallbackPrice, 12.99)
+        XCTAssertEqual(SubscriptionPlan.monthly.fallbackPrice, 2.99)
         XCTAssertEqual(SubscriptionPlan.sixMonth.fallbackPrice, 9.99)
         XCTAssertEqual(SubscriptionPlan.yearly.fallbackPrice, 14.99)
     }
@@ -401,3 +401,41 @@ final class CameraSettingsTests: XCTestCase {
         )
     }
 }
+
+#if DEBUG
+/// `DebugPremiumOverride` only exists in Debug builds — which is also the
+/// only configuration this test target runs in — so nothing here can reach a
+/// Release binary. These deliberately never call `refreshEntitlement()`
+/// directly: that hits real StoreKit APIs, and the app's test scheme only
+/// attaches its local StoreKit configuration to the Launch action, not the
+/// Test action, so calling it here would be exercising StoreKit un-configured.
+@MainActor
+final class DebugPremiumOverrideTests: XCTestCase {
+
+    override func tearDown() {
+        DebugPremiumOverride.isEnabled = false
+        super.tearDown()
+    }
+
+    func testDefaultsToDisabled() {
+        DebugPremiumOverride.isEnabled = false
+        XCTAssertFalse(DebugPremiumOverride.isEnabled)
+    }
+
+    func testTheFlagPersistsAcrossReads() {
+        DebugPremiumOverride.isEnabled = true
+        XCTAssertTrue(DebugPremiumOverride.isEnabled)
+        DebugPremiumOverride.isEnabled = false
+        XCTAssertFalse(DebugPremiumOverride.isEnabled)
+    }
+
+    func testTogglingFromTheServiceFlipsTheStoredFlagImmediately() {
+        DebugPremiumOverride.isEnabled = false
+        let service = SubscriptionService()
+        service.debugToggleTestPremium()
+        XCTAssertTrue(DebugPremiumOverride.isEnabled, "The flag flips synchronously, before entitlement is re-evaluated")
+        service.debugToggleTestPremium()
+        XCTAssertFalse(DebugPremiumOverride.isEnabled)
+    }
+}
+#endif

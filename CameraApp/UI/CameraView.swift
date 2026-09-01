@@ -100,6 +100,12 @@ struct CameraView: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 4)
 
+                if model.isRecordingVideo {
+                    recordingIndicator
+                        .padding(.top, 10)
+                        .transition(.opacity)
+                }
+
                 statusChips
 
                 GuidanceBanner(state: model.guidance, rotation: model.orientation.controlRotation)
@@ -137,9 +143,16 @@ struct CameraView: View {
         .animation(.easeOut(duration: 0.15), value: model.countdownRemaining)
     }
 
+    /// The true 9:16 capture frame, centred within whatever the screen
+    /// actually measures — never assumed to already be 9:16 itself. Anything
+    /// left over shows as letterbox above and below, on the black background
+    /// already behind this view.
+    private var previewBox: CGRect { previewSize.nineSixteenBox() }
+
     private var previewSurface: some View {
+        let box = previewBox
         let geometry = PreviewGeometry(
-            viewSize: previewSize,
+            viewSize: box.size,
             contentAspectRatio: model.configuration.contentAspectRatio
         )
 
@@ -168,7 +181,8 @@ struct CameraView: View {
                     level: model.level,
                     faces: model.faces,
                     geometry: geometry,
-                    configuration: model.analysisConfiguration
+                    configuration: model.analysisConfiguration,
+                    subscription: model.subscription
                 )
             }
             #endif
@@ -180,14 +194,18 @@ struct CameraView: View {
                     .transition(.opacity)
 
                 ExposureSlider(bias: model.exposureBias) { model.setExposureBias($0) }
-                    .position(exposureSliderPoint(for: focus.point))
+                    .position(exposureSliderPoint(for: focus.point, in: box.size))
                     .transition(.opacity)
             }
         }
+        .frame(width: box.width, height: box.height)
+        .clipped()
+        .position(x: box.midX, y: box.midY)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
         .background {
             // Applied after `ignoresSafeArea`, so this reports the expanded,
-            // full-screen frame the preview layer actually occupies.
+            // full-screen frame the 9:16 box is centred within.
             GeometryReader { proxy in
                 Color.clear
                     .onAppear { previewSize = proxy.size }
@@ -196,7 +214,8 @@ struct CameraView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture(count: 1, coordinateSpace: .local) { location in
-            model.focus(at: location)
+            guard box.contains(location) else { return }
+            model.focus(at: CGPoint(x: location.x - box.minX, y: location.y - box.minY))
         }
         .gesture(
             MagnifyGesture()
@@ -207,11 +226,12 @@ struct CameraView: View {
         .animation(.easeOut(duration: 0.18), value: model.focusIndicator)
     }
 
-    /// Puts the slider beside the focus square, on whichever side has room.
-    private func exposureSliderPoint(for focus: CGPoint) -> CGPoint {
+    /// Puts the slider beside the focus square, on whichever side has room —
+    /// both points in the 9:16 box's own local coordinate space.
+    private func exposureSliderPoint(for focus: CGPoint, in boxSize: CGSize) -> CGPoint {
         let offset: CGFloat = 62
         let margin: CGFloat = 30
-        let x = focus.x + offset > previewSize.width - margin
+        let x = focus.x + offset > boxSize.width - margin
             ? focus.x - offset
             : focus.x + offset
         return CGPoint(x: x, y: focus.y)
@@ -307,6 +327,33 @@ struct CameraView: View {
         }
     }
 
+    /// A red dot and the running time — the one thing that must always be
+    /// obvious the instant it is true, so it sits with the status chips
+    /// rather than tucked into a menu.
+    private var recordingIndicator: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(Color.red)
+                .frame(width: 8, height: 8)
+            Text(Self.recordingTimeLabel(model.recordingElapsedSeconds))
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+        }
+        .rotationEffect(model.orientation.controlRotation)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Capsule().fill(.ultraThinMaterial))
+        .overlay {
+            Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
+        }
+        .accessibilityLabel(Text("Recording, \(Self.recordingTimeLabel(model.recordingElapsedSeconds))"))
+    }
+
+    private static func recordingTimeLabel(_ seconds: Int) -> String {
+        String(format: "%02d:%02d", seconds / 60, seconds % 60)
+    }
+
     private var settingsButton: some View {
         GlassCircleButton(
             systemImage: "slider.horizontal.3",
@@ -354,13 +401,15 @@ struct CameraView: View {
 
     private var bottomControls: some View {
         VStack(spacing: 14) {
-            ModeSelector(
-                modes: ShootingMode.allCases,
-                selected: model.shootingMode,
-                rotation: model.orientation.controlRotation,
-                lockedModes: model.lockedShootingModes,
-                onSelect: { model.setShootingMode($0) }
-            )
+            if model.captureMode == .photo {
+                ModeSelector(
+                    modes: ShootingMode.allCases,
+                    selected: model.shootingMode,
+                    rotation: model.orientation.controlRotation,
+                    lockedModes: model.lockedShootingModes,
+                    onSelect: { model.setShootingMode($0) }
+                )
+            }
 
             if model.configuration.zoom.displayOptions.count > 1 {
                 ZoomSelector(
@@ -371,14 +420,21 @@ struct CameraView: View {
                 )
             }
 
+            captureModeToggle
+
             ZStack {
                 ShutterButton(
+                    isVideoMode: model.captureMode == .video,
+                    isRecording: model.isRecordingVideo,
                     isReady: model.guidance?.isReady == true,
                     isBusy: model.isCapturing,
                     isEnabled: model.status.isRunning && !model.isInterrupted,
                     autoCaptureProgress: model.autoCaptureProgress
                 ) {
-                    model.capturePhoto()
+                    switch model.captureMode {
+                    case .photo: model.capturePhoto()
+                    case .video: model.toggleVideoRecording()
+                    }
                 }
 
                 HStack {
@@ -391,10 +447,34 @@ struct CameraView: View {
                     ) {
                         model.switchCamera()
                     }
-                    .disabled(model.isSwitchingCamera || model.isCapturing)
+                    .disabled(model.isSwitchingCamera || model.isCapturing || model.isRecordingVideo)
                 }
             }
         }
+    }
+
+    /// Photo / Video. Disabled mid-capture rather than hidden, so the mode
+    /// you are in stays legible even while the shutter is busy.
+    private var captureModeToggle: some View {
+        HStack(spacing: 28) {
+            ForEach(CameraModel.CaptureMode.allCases) { mode in
+                let isActive = mode == model.captureMode
+                Button {
+                    model.setCaptureMode(mode)
+                } label: {
+                    Text(mode.title.uppercased())
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .tracking(0.8)
+                        .foregroundStyle(isActive ? Color.yellow : Color.white.opacity(0.6))
+                        .rotationEffect(model.orientation.controlRotation)
+                }
+                .buttonStyle(PressableButtonStyle(pressedScale: 0.94))
+                .disabled(model.isCapturing || model.isRecordingVideo)
+                .accessibilityLabel(Text("\(mode.title) mode"))
+                .accessibilityAddTraits(isActive ? [.isSelected] : [])
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: model.captureMode)
     }
 }
 

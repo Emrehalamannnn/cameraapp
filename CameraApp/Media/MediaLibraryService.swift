@@ -60,4 +60,26 @@ actor MediaLibraryService {
             }
         }
     }
+
+    /// Imports a finished recording from disk. PhotoKit reads the file
+    /// synchronously inside `performChanges`, so by the time this returns
+    /// successfully the asset has been copied into the library and the
+    /// caller is free to delete the temporary file.
+    func saveVideo(at url: URL) async throws {
+        guard Self.isUsable(authorizationStatus) else { throw MediaLibraryError.notAuthorized }
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            PHPhotoLibrary.shared().performChanges {
+                let creationRequest = PHAssetCreationRequest.forAsset()
+                creationRequest.addResource(with: .video, fileURL: url, options: nil)
+            } completionHandler: { success, error in
+                if success {
+                    continuation.resume()
+                } else {
+                    let message = error?.localizedDescription ?? "The video could not be saved."
+                    continuation.resume(throwing: MediaLibraryError.saveFailed(message))
+                }
+            }
+        }
+    }
 }

@@ -191,7 +191,25 @@ final class SubscriptionService {
         }
 
         status = isEntitled ? .pro(expires: latestExpiry) : .free
+
+        #if DEBUG
+        // Development/testing only — see `DebugPremiumOverride`. Applied
+        // after the real entitlement is computed, never instead of it, and
+        // compiled out of every non-Debug build.
+        if DebugPremiumOverride.isEnabled {
+            status = .pro(expires: nil)
+        }
+        #endif
     }
+
+    #if DEBUG
+    /// Flips the local test-Premium override and re-evaluates entitlement.
+    /// Debug-only — see `DebugPremiumOverride`.
+    func debugToggleTestPremium() {
+        DebugPremiumOverride.isEnabled.toggle()
+        Task { await refreshEntitlement() }
+    }
+    #endif
 
     /// Shows a line of feedback and takes it away again. A message that stays
     /// until something else replaces it becomes stale advice — "No purchases to

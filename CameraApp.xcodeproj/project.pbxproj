@@ -323,6 +323,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = CameraApp;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "CameraApp uses the camera to frame, guide and take your photos.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "CameraApp uses the microphone to record audio with your videos.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "CameraApp reads device motion to tell you when the camera is steady enough for a sharp photo.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "CameraApp saves the photos you keep to your photo library.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -356,6 +357,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = CameraApp;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "CameraApp uses the camera to frame, guide and take your photos.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "CameraApp uses the microphone to record audio with your videos.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "CameraApp reads device motion to tell you when the camera is steady enough for a sharp photo.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "CameraApp saves the photos you keep to your photo library.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

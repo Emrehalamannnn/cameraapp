@@ -50,7 +50,7 @@ enum SubscriptionPlan: String, CaseIterable, Identifiable, Sendable {
     /// Fallback price in USD. Superseded by StoreKit whenever products load.
     var fallbackPrice: Decimal {
         switch self {
-        case .monthly: return 12.99
+        case .monthly: return 2.99
         case .sixMonth: return 9.99
         case .yearly: return 14.99
         }

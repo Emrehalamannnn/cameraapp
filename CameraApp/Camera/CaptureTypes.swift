@@ -158,3 +158,12 @@ enum MediaLibraryError: LocalizedError, Equatable {
         }
     }
 }
+
+// MARK: - Video recording
+
+/// What a started recording produced, so the caller knows whether it should
+/// mention the missing microphone rather than pretending audio was captured.
+struct VideoRecordingHandle: Sendable, Equatable {
+    var fileURL: URL
+    var includesAudio: Bool
+}

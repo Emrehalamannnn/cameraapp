@@ -38,6 +38,10 @@ final class VideoFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBufferD
     private var orientation: CGImagePropertyOrientation = .right
     private var isMirrored = false
     private var currentRotationAngle: CGFloat = 90
+    /// Set only while a video recording is in progress. Every frame reaches
+    /// this, at the full capture rate — recording must never be subject to
+    /// the analysis throttle above, or the saved video would stutter.
+    private var recordingSink: (@Sendable (CMSampleBuffer, CGImagePropertyOrientation) -> Void)?
 
     init(analyzer: FrameAnalysisService, analysesPerSecond: Double = 12) {
         self.analyzer = analyzer
@@ -59,6 +63,16 @@ final class VideoFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBufferD
         queue.async { [self] in
             isEnabled = enabled
             if !enabled { isAnalyzing = false }
+        }
+    }
+
+    /// Installs or removes the recording tap. `nil` stops recording frames
+    /// from being forwarded at all — the cheapest possible "not recording"
+    /// state, since it costs nothing beyond the pointer check already on the
+    /// hot path.
+    func setRecordingSink(_ sink: (@Sendable (CMSampleBuffer, CGImagePropertyOrientation) -> Void)?) {
+        queue.async { [self] in
+            recordingSink = sink
         }
     }
 
@@ -90,6 +104,10 @@ final class VideoFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBufferD
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
+        if let recordingSink {
+            recordingSink(sampleBuffer, orientation)
+        }
+
         guard isEnabled, !isAnalyzing else { return }
 
         let now = CACurrentMediaTime()
