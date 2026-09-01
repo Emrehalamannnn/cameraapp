@@ -188,7 +188,7 @@ final class PhotoEnhancer {
         ) ?? context.jpegRepresentation(
             of: image,
             colorSpace: colorSpace,
-            options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.95]
+            options: [:]
         )
     }
 }
