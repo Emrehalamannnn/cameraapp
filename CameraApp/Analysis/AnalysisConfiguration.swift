@@ -47,6 +47,9 @@ struct AnalysisConfiguration: Sendable, Equatable {
     var focusSettlingDwell: TimeInterval = 0.85
     /// How long Ready holds before the instruction fades out of the way.
     var readyFadeDelay: TimeInterval = 1.4
+    /// Frames taken when Best Shot is on. Three covers a blink without making
+    /// the shutter feel slow.
+    var burstFrameCount: Int = 3
 
     static let standard = AnalysisConfiguration()
 }

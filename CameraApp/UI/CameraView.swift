@@ -189,6 +189,17 @@ struct CameraView: View {
             Spacer(minLength: 0)
 
             GlassCircleButton(
+                systemImage: model.isBestShotEnabled ? "square.stack.fill" : "square.stack",
+                accessibilityLabel: model.isBestShotEnabled
+                    ? "Disable Best Shot"
+                    : "Enable Best Shot",
+                isHighlighted: model.isBestShotEnabled,
+                rotation: model.orientation.controlRotation
+            ) {
+                model.toggleBestShot()
+            }
+
+            GlassCircleButton(
                 systemImage: "timer",
                 accessibilityLabel: model.isAutoCaptureEnabled
                     ? "Disable Auto Capture"

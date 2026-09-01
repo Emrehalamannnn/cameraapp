@@ -77,6 +77,8 @@ final class CameraModel {
     private(set) var message: String?
     private(set) var isPhotoAccessDenied = false
     private(set) var isAutoCaptureEnabled = false
+    /// Takes a short burst and keeps the frame that scored best.
+    private(set) var isBestShotEnabled = false
     private(set) var autoCaptureProgress: Double = 0
 
     var isReviewing: Bool { review != nil }
@@ -310,7 +312,7 @@ final class CameraModel {
         Task {
             defer { isCapturing = false }
             do {
-                let photo = try await captureService.capturePhoto(flashMode: flashMode)
+                let photo = try await capturePreferredPhoto()
                 // The preview stays live behind the review screen, but there is
                 // nothing to guide while the shot is being judged.
                 await captureService.setAnalysisEnabled(false)
@@ -325,6 +327,22 @@ final class CameraModel {
                 present(message: error.localizedDescription)
             }
         }
+    }
+
+    /// One frame, or the best of a short burst when Best Shot is on.
+    private func capturePreferredPhoto() async throws -> CapturedPhoto {
+        guard isBestShotEnabled, analysisConfiguration.burstFrameCount > 1 else {
+            return try await captureService.capturePhoto(flashMode: flashMode)
+        }
+        let photos = try await captureService.capturePhotoBurst(
+            flashMode: flashMode,
+            count: analysisConfiguration.burstFrameCount
+        )
+        guard let first = photos.first else { throw CameraError.photoDataUnavailable }
+        guard photos.count > 1 else { return first }
+        let chosen = await Self.pickBest(from: photos) ?? first
+        present(message: "Kept the best of \(photos.count)")
+        return chosen
     }
 
     func retakePhoto() {
@@ -425,6 +443,33 @@ final class CameraModel {
         if isReadySettled != settled {
             isReadySettled = settled
         }
+    }
+
+    // MARK: - Best shot
+
+    func toggleBestShot() {
+        isBestShotEnabled.toggle()
+        Haptics.shared.selectionSignal()
+        present(message: isBestShotEnabled ? "Best shot on" : "Best shot off")
+    }
+
+    /// Scores a burst and returns the keeper.
+    ///
+    /// Runs off the main actor: decoding and scoring three frames is real work
+    /// and the preview is still live behind the review screen.
+    private static func pickBest(from photos: [CapturedPhoto]) async -> CapturedPhoto? {
+        await Task.detached(priority: .userInitiated) { () -> CapturedPhoto? in
+            var scores: [ShotScore] = []
+            for (index, photo) in photos.enumerated() {
+                guard let image = photo.makeScoringImage(
+                    maxDimension: ShotScorer.scoringDimension
+                ) else { continue }
+                scores.append(ShotScorer.score(image: image, index: index))
+            }
+            guard let best = BestShotSelector.best(scores),
+                  photos.indices.contains(best.id) else { return nil }
+            return photos[best.id]
+        }.value
     }
 
     // MARK: - Shooting mode

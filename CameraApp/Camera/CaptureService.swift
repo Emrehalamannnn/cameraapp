@@ -333,6 +333,22 @@ actor CaptureService {
         return try await processor.capture(with: settings, using: photoOutput)
     }
 
+    /// Takes several frames back to back so the best one can be chosen.
+    ///
+    /// The captures are sequential rather than overlapped: AVCapturePhotoOutput
+    /// wants one settings object in flight at a time, and a burst of three at
+    /// full quality is already under a second — fast enough that the moment has
+    /// not moved on, slow enough not to fight the encoder.
+    func capturePhotoBurst(flashMode: FlashMode, count: Int) async throws -> [CapturedPhoto] {
+        let frames = max(1, count)
+        var photos: [CapturedPhoto] = []
+        photos.reserveCapacity(frames)
+        for _ in 0..<frames {
+            photos.append(try await capturePhoto(flashMode: flashMode))
+        }
+        return photos
+    }
+
     private func makePhotoSettings(
         flashMode: FlashMode,
         device: AVCaptureDevice
