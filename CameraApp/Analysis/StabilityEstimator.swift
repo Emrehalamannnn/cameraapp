@@ -24,7 +24,13 @@ enum StabilityEstimator {
     ///   - motion: inertial reading, or `nil` where Core Motion is unavailable.
     ///   - frameDelta: mean absolute luma change between consecutive analysed
     ///     frames, in `0...1`. Doubles as the fallback motion signal.
-    static func evaluate(motion: MotionReading?, frameDelta: Double) -> StabilityAssessment {
+    static func evaluate(
+        motion: MotionReading?,
+        frameDelta: Double,
+        configuration: AnalysisConfiguration = .standard
+    ) -> StabilityAssessment {
+        let steadyThreshold = configuration.steadyThreshold
+        let slightMotionThreshold = configuration.slightMotionThreshold
         let clampedDelta = min(max(frameDelta, 0), 1)
         let score: Double
         if let motion {

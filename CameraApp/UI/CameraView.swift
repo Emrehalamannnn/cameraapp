@@ -225,7 +225,14 @@ struct CameraView: View {
     }
 
     private var bottomControls: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 14) {
+            ModeSelector(
+                modes: ShootingMode.allCases,
+                selected: model.shootingMode,
+                rotation: model.orientation.controlRotation,
+                onSelect: { model.setShootingMode($0) }
+            )
+
             if model.configuration.zoom.displayOptions.count > 1 {
                 ZoomSelector(
                     options: model.configuration.zoom.displayOptions,

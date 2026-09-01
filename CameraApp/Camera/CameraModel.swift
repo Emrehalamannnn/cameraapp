@@ -60,6 +60,9 @@ final class CameraModel {
     /// True once Ready has held long enough that the instruction has said all
     /// it usefully can. The UI uses it to get out of the way.
     private(set) var isReadySettled = false
+    /// What the camera is being pointed at, which decides what good framing
+    /// even means.
+    private(set) var shootingMode: ShootingMode = .portrait
     private(set) var configuration: CameraConfiguration = .unknown
     private(set) var selectedZoom: Double = 1
     private(set) var flashMode: FlashMode = .auto
@@ -86,9 +89,9 @@ final class CameraModel {
     @ObservationIgnored private let analysisService: FrameAnalysisService
     @ObservationIgnored private let captureService: CaptureService
     @ObservationIgnored private let mediaLibrary = MediaLibraryService()
-    /// Calibration values in force. Exposed so the debug overlay can draw the
-    /// regions the rules actually test against.
-    @ObservationIgnored let analysisConfiguration: AnalysisConfiguration
+    /// Calibration values in force for the selected mode. Exposed so the debug
+    /// overlay can draw the regions the rules actually test against.
+    @ObservationIgnored private(set) var analysisConfiguration: AnalysisConfiguration
 
     @ObservationIgnored private var guidanceEngine: GuidanceEngine
     @ObservationIgnored private var autoCaptureController: AutoCaptureController
@@ -104,8 +107,11 @@ final class CameraModel {
 
     var session: AVCaptureSession { captureService.session }
 
-    init(analysisConfiguration: AnalysisConfiguration = .standard) {
+    init(shootingMode: ShootingMode = .portrait) {
+        self.shootingMode = shootingMode
+        let analysisConfiguration = shootingMode.configuration
         self.analysisConfiguration = analysisConfiguration
+        isGridVisible = shootingMode.prefersGrid
         let analysis = FrameAnalysisService(configuration: analysisConfiguration)
         analysisService = analysis
         captureService = CaptureService(analyzer: analysis)
@@ -419,6 +425,31 @@ final class CameraModel {
         if isReadySettled != settled {
             isReadySettled = settled
         }
+    }
+
+    // MARK: - Shooting mode
+
+    /// Switches calibration wholesale. Every downstream rule reads its numbers
+    /// from the configuration, so a mode change is a data change rather than a
+    /// branch scattered through the analysis code.
+    func setShootingMode(_ mode: ShootingMode) {
+        guard mode != shootingMode else { return }
+        shootingMode = mode
+        analysisConfiguration = mode.configuration
+        guidanceEngine = GuidanceEngine(configuration: analysisConfiguration)
+        autoCaptureController = AutoCaptureController(configuration: analysisConfiguration)
+        isGridVisible = mode.prefersGrid
+
+        guidance = nil
+        composition = .noSubject
+        shotQuality = .unknown
+        isReadySettled = false
+        readyShownAt = nil
+        resetAutoCapture(requiresReadyExit: true)
+        Haptics.shared.selectionSignal()
+
+        Task { await analysisService.setMode(mode) }
+        present(message: mode.title)
     }
 
     // MARK: - Debug

@@ -37,8 +37,15 @@ enum LightingEstimator {
         return value.isFinite ? value : nil
     }
 
-    static func evaluate(exposure: ExposureReading?, meanLuma: Double) -> LightingAssessment {
+    static func evaluate(
+        exposure: ExposureReading?,
+        meanLuma: Double,
+        configuration: AnalysisConfiguration = .standard
+    ) -> LightingAssessment {
         let ev = exposure.flatMap(exposureValue(for:))
+        let tooDarkExposureValue = configuration.tooDarkExposureValue
+        let dimExposureValue = configuration.dimExposureValue
+        let clippedLuma = configuration.clippedLuma
 
         // Blown highlights are worth calling out regardless of the exposure pair.
         if meanLuma >= clippedLuma {

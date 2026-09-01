@@ -25,7 +25,8 @@ actor FrameAnalysisService {
 
     private let faceRequest: VNDetectFaceRectanglesRequest
     private let motionMonitor = MotionMonitor()
-    private let configuration: AnalysisConfiguration
+    private var configuration: AnalysisConfiguration
+    private var subjectPolicy: SubjectPolicy = .face
 
     private var previousGrid: [Float]?
     private var previousComposition: CompositionAssessment?
@@ -47,6 +48,15 @@ actor FrameAnalysisService {
 
     deinit {
         continuation.finish()
+    }
+
+    /// Switches calibration. The mode decides both the thresholds and whether
+    /// faces are the subject at all.
+    func setMode(_ mode: ShootingMode) {
+        configuration = mode.configuration
+        subjectPolicy = mode.subjectPolicy
+        previousComposition = nil
+        previousLevel = nil
     }
 
     func start() {
@@ -88,19 +98,22 @@ actor FrameAnalysisService {
 
         let lighting = LightingEstimator.evaluate(
             exposure: context.exposure,
-            meanLuma: sample?.mean ?? 0.5
+            meanLuma: sample?.mean ?? 0.5,
+            configuration: configuration
         )
         let motion = motionMonitor.currentReading()
         let stability = StabilityEstimator.evaluate(
             motion: motion,
-            frameDelta: frameDelta
+            frameDelta: frameDelta,
+            configuration: configuration
         )
         let faces = detectFaces(in: pixelBuffer, orientation: context.orientation)
         let composition = CompositionEvaluator.evaluate(
             faces: faces,
             isMirrored: context.isMirrored,
             previous: previousComposition,
-            configuration: configuration
+            configuration: configuration,
+            subjectPolicy: subjectPolicy
         )
         let level = LevelEstimator.evaluate(
             motion: motion,

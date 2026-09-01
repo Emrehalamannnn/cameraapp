@@ -162,6 +162,45 @@ struct ZoomSelector: View {
     }
 }
 
+// MARK: - Shooting mode
+
+/// The mode strip. Text only, no chrome: it sits over the photo, so it earns
+/// its place by being small and quiet rather than by being a control panel.
+struct ModeSelector: View {
+
+    let modes: [ShootingMode]
+    let selected: ShootingMode
+    let rotation: Angle
+    let onSelect: (ShootingMode) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 18) {
+                ForEach(modes) { mode in
+                    let isActive = mode == selected
+                    Button {
+                        onSelect(mode)
+                    } label: {
+                        Text(mode.shortTitle)
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .tracking(0.6)
+                            .foregroundStyle(isActive ? Color.yellow : Color.white.opacity(0.65))
+                            .rotationEffect(rotation)
+                            .padding(.vertical, 6)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressableButtonStyle(pressedScale: 0.94))
+                    .accessibilityLabel(Text("\(mode.title) mode"))
+                    .accessibilityAddTraits(isActive ? [.isSelected] : [])
+                }
+            }
+            .padding(.horizontal, 28)
+        }
+        .frame(height: 26)
+        .animation(.easeOut(duration: 0.2), value: selected)
+    }
+}
+
 // MARK: - Transient message
 
 struct MessageToast: View {

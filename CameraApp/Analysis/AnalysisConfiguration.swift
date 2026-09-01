@@ -29,6 +29,16 @@ struct AnalysisConfiguration: Sendable, Equatable {
     var rollEnterToleranceDegrees: Double = 3.0
     var rollExitToleranceDegrees: Double = 1.75
 
+    /// Lighting. Night mode relaxes these so the app stops demanding light
+    /// that the user has deliberately chosen not to have.
+    var tooDarkExposureValue: Double = 1.5
+    var dimExposureValue: Double = 4.0
+    var clippedLuma: Double = 0.94
+
+    /// Stability. Long-exposure modes demand a much steadier hand.
+    var steadyThreshold: Double = 0.14
+    var slightMotionThreshold: Double = 0.34
+
     var readyScore: Int = 78
     var guidanceDwell: TimeInterval = 0.35
     var readyDwell: TimeInterval = 0.6

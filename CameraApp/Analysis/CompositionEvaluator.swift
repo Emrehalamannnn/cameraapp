@@ -24,8 +24,15 @@ enum CompositionEvaluator {
         faces: [DetectedFace],
         isMirrored: Bool,
         previous: CompositionAssessment? = nil,
-        configuration: AnalysisConfiguration = .standard
+        configuration: AnalysisConfiguration = .standard,
+        subjectPolicy: SubjectPolicy = .face
     ) -> CompositionAssessment {
+        // In scene modes a face in shot is a bystander, not the subject, so
+        // face geometry says nothing about whether the frame is well composed.
+        // The app would rather stay quiet than invent advice about a plate of
+        // food from the position of someone's head behind it.
+        guard subjectPolicy == .face else { return .noSubject }
+
         let reliableFaces = faces.filter { $0.confidence >= configuration.minimumDetectionConfidence }
         guard let first = reliableFaces.first else {
             guard !faces.isEmpty else { return .noSubject }
