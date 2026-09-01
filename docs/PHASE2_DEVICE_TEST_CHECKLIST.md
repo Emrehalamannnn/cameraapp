@@ -147,3 +147,23 @@ considers good framing, so test them against the thing they are for.
 - Long-press the grid button. Confirm the overlay appears in a debug build and
   that the numbers track what you see.
 - Confirm it cannot be summoned in a Release build.
+
+## Expression gating
+
+- Frame a good shot with Auto Capture on, then blink deliberately as the ring
+  starts to fill. Report whether the capture is held off and "Almost — hold it"
+  appears.
+- Report whether the gate is too strict: if it regularly refuses to fire on a
+  face that looks fine to you, `minimumFaceCaptureQuality` is too high.
+- Group photo: confirm one person blinking holds the capture for everyone.
+- Confirm the **manual shutter still fires immediately** while "Almost — hold
+  it" is showing. It must never block a deliberate press.
+
+## Burst shortlist
+
+- With Best Shot on, take a photo and report whether the strip of three
+  alternatives appears, and whether the app's own pick (the first, outlined) is
+  the one you would have chosen.
+- Tap another frame and confirm the large preview switches and Save keeps that
+  frame.
+- Confirm choosing a different frame clears any enhancement you had applied.

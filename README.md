@@ -81,8 +81,27 @@ read through the system photo picker, which hands over a single image without
 the app ever gaining access to the library, and the only Photos permission
 requested is add-only — the app can save your photos and cannot read them.
 
-## What Phase 2 adds
+## The composition brain
 
-Aesthetic scoring, auto-capture at the ideal moment, photo enhancement, and
-richer subject understanding — all of which plug into `FrameAnalysisService`
-and `GuidanceEngine` without touching the camera stack.
+| Layer | Type | Responsibility |
+| --- | --- | --- |
+| `ShootingMode` | `enum` | What is being photographed, and therefore what good framing means. Supplies a whole `AnalysisConfiguration` and declares whether faces are the subject. |
+| `CompositionEvaluator` | pure | Framing geometry and verdict, in normalised preview space, aimed at a `CompositionTarget`. |
+| `LevelEstimator` | pure | Camera roll from gravity, standing down when the phone is too flat for roll to mean anything. |
+| `BodyPoseRules` | pure | Where the frame cuts the body, for full-body modes only. |
+| `ShotQualityModel` | pure | One conservative readiness decision from every signal, including whether the subject is camera-ready. |
+| `GuidanceEngine` | `struct` | One instruction at a time, with dwell and hysteresis. |
+| `AutoCaptureController` | `struct` | When the app is allowed to take a photo by itself. |
+| `BestShotSelector` / `ShotScorer` | pure | Which frame of a burst to keep. |
+| `EnhancementPlanner` / `PhotoEnhancer` | pure / Core Image | How little to change a photo. |
+
+Everything in the "pure" rows is a value type with no camera dependency, which
+is why the framing rules, the safety rules and the enhancement ceilings are all
+unit tested rather than hoped for.
+
+## Calibration
+
+Every threshold lives in `AnalysisConfiguration`, and each shooting mode is a
+set of overrides on it. None of the defaults have been validated against a real
+phone yet — `docs/PHASE2_DEVICE_TEST_CHECKLIST.md` says exactly what to observe
+and report for each one.
