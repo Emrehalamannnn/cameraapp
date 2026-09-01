@@ -77,7 +77,9 @@ survives a relaunch.
 
 A macOS GitHub Actions workflow builds the app target and runs the suite
 against a real iOS simulator on every push, so "it compiles" is a fact rather
-than a claim.
+than a claim. It also checks that the product identifiers in
+`SubscriptionPlan` and in the StoreKit configuration still match — a rename on
+one side of that pairing is invisible to the compiler and fatal at runtime.
 
 ## Free and Pro
 
@@ -134,16 +136,19 @@ because control sizes there are about where your thumb lands.
 
 ## Before shipping
 
-Three things in this repository are placeholders and have to be replaced:
+Two things in this repository are placeholders and have to be replaced, and
+one is a local convenience:
 
 * The product identifiers in `SubscriptionPlan.productID` (`com.example.…`)
   must match real subscriptions in App Store Connect, in one subscription
   group, or `Product.products(for:)` returns nothing and the paywall stays on
   its fallback prices.
 * The privacy URL in `PaywallView` points at `example.com`.
-* Add a StoreKit configuration file to the scheme to exercise purchase,
-  restore, expiry and refund locally — none of that can be tested against the
-  real store from a development build.
+* `StoreKit/CameraApp.storekit` is wired into the scheme's Run action and
+  mirrors those identifiers, so purchase, restore, expiry and refund can be
+  exercised locally. Its product IDs have to be changed in step with
+  `SubscriptionPlan`. (If Xcode does not pick it up, set it under Product →
+  Scheme → Edit Scheme → Run → Options → StoreKit Configuration.)
 
 The prices in `SubscriptionPlan.fallbackPrice` are fallbacks for layout and for
 a store that cannot be reached. The price shown to a customer always comes from
@@ -152,6 +157,11 @@ StoreKit, which is the only thing that knows their currency and storefront.
 ## Privacy
 
 Everything the app does happens on the device.
+
+`CameraApp/PrivacyInfo.xcprivacy` says the same thing in the form the App
+Store checks: no tracking, no tracking domains, no collected data types, and
+the two required-reason APIs the app does use — `UserDefaults` for
+preferences, and `CACurrentMediaTime` to time how long a shot has been steady.
 
 There is no analytics, no account and no backend. The only thing that leaves
 the device is a StoreKit purchase, which goes to Apple and carries no photo,
@@ -184,5 +194,5 @@ unit tested rather than hoped for.
 
 Every threshold lives in `AnalysisConfiguration`, and each shooting mode is a
 set of overrides on it. None of the defaults have been validated against a real
-phone yet — `docs/PHASE2_DEVICE_TEST_CHECKLIST.md` says exactly what to observe
+phone yet — `docs/DEVICE_TEST_CHECKLIST.md` says exactly what to observe
 and report for each one.

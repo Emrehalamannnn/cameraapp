@@ -170,9 +170,10 @@ considers good framing, so test them against the thing they are for.
 
 ## Settings, subscription and the new controls
 
-None of this can be verified in the Simulator or in CI. It needs a device, and
-the subscription half needs either a StoreKit configuration file in the scheme
-or real products in App Store Connect.
+None of this can be verified in the Simulator or in CI. It needs a device. The
+subscription half runs against `StoreKit/CameraApp.storekit` (already wired
+into the scheme's Run action) for everything except a real purchase, which
+needs a sandbox account and real products in App Store Connect.
 
 ### First launch
 

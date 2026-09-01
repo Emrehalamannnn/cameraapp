@@ -147,6 +147,51 @@ final class PremiumGateTests: XCTestCase {
         }
     }
 
+    // MARK: - What a lapse leaves behind
+
+    func testALapseLeavesAWorkingModeRatherThanABrokenOne() {
+        for mode in ShootingMode.allCases {
+            let resolved = PremiumGate.resolve(mode, status: .free)
+            XCTAssertTrue(
+                PremiumGate.isAvailable(resolved, status: .free),
+                "\(mode) resolved to \(resolved), which is itself locked"
+            )
+        }
+    }
+
+    func testALapseLeavesAGuideThatCanActuallyBeDrawn() {
+        for guide in CompositionGuide.allCases {
+            let resolved = PremiumGate.resolve(guide, status: .free)
+            XCTAssertTrue(
+                PremiumGate.isAvailable(resolved, status: .free),
+                "\(guide) resolved to \(resolved), which is itself locked"
+            )
+        }
+    }
+
+    func testResubscribingGetsBackExactlyWhatWasChosen() {
+        // The selection is never rewritten on a lapse, only reinterpreted, so
+        // paying again restores the setup rather than a default.
+        for mode in ShootingMode.allCases {
+            XCTAssertEqual(PremiumGate.resolve(mode, status: .pro(expires: nil)), mode)
+        }
+        for guide in CompositionGuide.allCases {
+            XCTAssertEqual(PremiumGate.resolve(guide, status: .pro(expires: nil)), guide)
+        }
+    }
+
+    func testAFreeChoiceIsNeverSubstituted() {
+        XCTAssertEqual(PremiumGate.resolve(ShootingMode.portrait, status: .free), .portrait)
+        XCTAssertEqual(PremiumGate.resolve(CompositionGuide.off, status: .free), .off)
+        XCTAssertEqual(PremiumGate.resolve(CompositionGuide.thirds, status: .free), .thirds)
+    }
+
+    func testTurningTheGuideOffIsNotUpsoldIntoTurningItOn() {
+        // `.off` is a free choice, and resolving it to thirds would put lines
+        // back over the picture of someone who asked for none.
+        XCTAssertEqual(PremiumGate.resolve(CompositionGuide.off, status: .unknown), .off)
+    }
+
     func testAnExpiredSubscriptionIsNotPro() {
         XCTAssertFalse(EntitlementStatus.free.isPro)
         XCTAssertFalse(EntitlementStatus.unknown.isPro)

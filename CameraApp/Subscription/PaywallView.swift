@@ -191,7 +191,11 @@ struct PaywallView: View {
 
             HStack(spacing: 18) {
                 Button("Restore") {
-                    Task { await service.restore() }
+                    Task {
+                        await service.restore()
+                        // A restore that worked has nothing left to sell.
+                        if service.isPro { onDismiss() }
+                    }
                 }
                 .disabled(service.isRestoring)
 

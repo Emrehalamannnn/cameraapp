@@ -34,6 +34,11 @@ jobs:
       - name: List schemes and targets
         run: xcodebuild -list -project CameraApp.xcodeproj | tee schemes.txt
 
+      # A rename on one side of this pairing is invisible to the compiler and
+      # fatal at runtime: no products load, and every purchase fails.
+      - name: Check StoreKit product identifiers
+        run: python3 scripts/check-storekit-identifiers.py
+
       - name: Build app target (Debug, iOS Simulator)
         run: |
           set -o pipefail

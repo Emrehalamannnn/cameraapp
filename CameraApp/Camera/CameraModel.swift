@@ -71,11 +71,7 @@ final class CameraModel {
     /// The guide drawn over the preview. A Pro guide left selected after a
     /// subscription lapses shows as thirds rather than disappearing.
     var compositionGuide: CompositionGuide {
-        let selected = settings.compositionGuide
-        guard CompositionGuide.free.contains(selected) else {
-            return subscription.isPro ? selected : CompositionGuide.fallback
-        }
-        return selected
+        PremiumGate.resolve(settings.compositionGuide, status: subscription.status)
     }
     private(set) var isCapturing = false
     private(set) var isSwitchingCamera = false
@@ -595,9 +591,7 @@ final class CameraModel {
             readyShownAt = update.state?.isReady == true ? now : nil
         }
         if update.didBecomeReady {
-            if settings.isHapticsEnabled {
-                Haptics.shared.readySignal()
-            }
+            Haptics.shared.readySignal()
         }
         updateReadySettled(now: now)
 
@@ -801,11 +795,10 @@ final class CameraModel {
 
     // MARK: - Feedback
 
-    /// All selection feedback goes through here so the haptics preference is
-    /// honoured in one place rather than at sixteen call sites.
+    /// Named at the call sites so they read as intent rather than as hardware.
+    /// Whether anything is actually felt is `Haptics`' business.
     private func signalSelection() {
-        guard settings.isHapticsEnabled else { return }
-        signalSelection()
+        Haptics.shared.selectionSignal()
     }
 
     // MARK: - Settings
@@ -813,6 +806,7 @@ final class CameraModel {
     /// Pushes preferences that the capture session has to be told about.
     /// Called at start-up and whenever the settings sheet closes.
     func applySettings() async {
+        Haptics.shared.isEnabled = settings.isHapticsEnabled
         let isPro = subscription.isPro
         await captureService.applyCaptureSettings(
             resolution: isPro ? settings.photoResolution : .standard,
@@ -822,9 +816,9 @@ final class CameraModel {
         await captureService.setAnalysisRate(settings.responsiveness.analysesPerSecond)
 
         // A lapsed subscription must leave a working camera, not a broken one.
-        if !PremiumGate.isAvailable(shootingMode, status: subscription.status),
-           shootingMode != PremiumGate.fallbackMode {
-            setShootingModeUnchecked(PremiumGate.fallbackMode)
+        let resolved = PremiumGate.resolve(shootingMode, status: subscription.status)
+        if resolved != shootingMode {
+            setShootingModeUnchecked(resolved)
         }
     }
 

@@ -29,6 +29,11 @@ struct RootView: View {
             }
             .task { await subscription.start() }
             .onChange(of: model.status) { _, _ in offerPaywallIfNeeded() }
+            // Turning haptics off should be felt — or rather not felt —
+            // straight away, not when the sheet happens to close.
+            .onChange(of: settings.isHapticsEnabled) { _, enabled in
+                Haptics.shared.isEnabled = enabled
+            }
             // A locked control was tapped somewhere in the camera UI.
             .onChange(of: model.isPaywallPresented) { _, isPresented in
                 guard isPresented else { return }

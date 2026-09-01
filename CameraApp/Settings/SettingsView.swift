@@ -223,7 +223,7 @@ struct SettingsView: View {
                 selection: Binding(
                     get: { settings.compositionGuide },
                     set: { newValue in
-                        guard CompositionGuide.free.contains(newValue) || subscription.isPro else {
+                        guard PremiumGate.isAvailable(newValue, status: subscription.status) else {
                             isShowingPaywall = true
                             return
                         }
@@ -232,10 +232,11 @@ struct SettingsView: View {
                 ),
                 label: \.title,
                 detail: \.detail,
-                lockedOptions: subscription.isPro
-                    ? []
-                    : Set(CompositionGuide.allCases.map(\.id))
-                        .subtracting(CompositionGuide.free.map(\.id))
+                lockedOptions: Set(
+                    CompositionGuide.allCases
+                        .filter { !PremiumGate.isAvailable($0, status: subscription.status) }
+                        .map(\.id)
+                )
             )
             SettingsDivider()
             SettingsToggleRow(

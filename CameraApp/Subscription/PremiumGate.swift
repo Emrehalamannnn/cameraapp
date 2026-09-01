@@ -94,11 +94,31 @@ enum PremiumGate {
     static let freeShootingModes: Set<ShootingMode> = [.portrait]
 
     static func isAvailable(_ mode: ShootingMode, status: EntitlementStatus) -> Bool {
-        status.isPro || freeShootingModes.contains(mode)
+        freeShootingModes.contains(mode)
+            || isAvailable(.advancedShootingModes, status: status)
     }
 
     /// The mode to fall back to when a Pro mode is in use and Pro goes away —
     /// a lapsed subscription should return you to a working camera, not a
     /// broken one.
     static let fallbackMode: ShootingMode = .portrait
+
+    /// What the camera should actually use, given what is selected and what is
+    /// paid for.
+    ///
+    /// A lapse must not leave a preference stranded: the selection stays put in
+    /// the settings, and this decides what the camera does with it, so
+    /// resubscribing gets you back exactly what you had.
+    static func resolve(_ mode: ShootingMode, status: EntitlementStatus) -> ShootingMode {
+        isAvailable(mode, status: status) ? mode : fallbackMode
+    }
+
+    static func isAvailable(_ guide: CompositionGuide, status: EntitlementStatus) -> Bool {
+        CompositionGuide.free.contains(guide)
+            || isAvailable(.compositionGuides, status: status)
+    }
+
+    static func resolve(_ guide: CompositionGuide, status: EntitlementStatus) -> CompositionGuide {
+        isAvailable(guide, status: status) ? guide : CompositionGuide.fallback
+    }
 }
