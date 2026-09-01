@@ -98,6 +98,17 @@ final class CameraModel {
     var isReferenceFramingAvailable: Bool {
         PremiumGate.isAvailable(.referenceFraming, status: subscription.status)
     }
+    /// Says the unlock out loud. Locks quietly disappearing from the mode
+    /// strip is easy to miss in the second after paying for them.
+    func announceProUnlocked() {
+        present(message: "Pro is active — everything unlocked")
+    }
+
+    /// Enhancement is Pro. The review screen marks the button rather than
+    /// hiding it, so the offer is legible instead of a dead end.
+    var isEnhancementAvailable: Bool {
+        PremiumGate.isAvailable(.enhancement, status: subscription.status)
+    }
     /// Whether the horizon hint may appear at all.
     var isLevelIndicatorEnabled: Bool { settings.isLevelIndicatorEnabled }
     /// Modes the current entitlement does not cover, so the selector can mark

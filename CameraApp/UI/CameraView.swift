@@ -51,6 +51,7 @@ struct CameraView: View {
                     isPhotoAccessDenied: model.isPhotoAccessDenied,
                     isEnhancing: model.isEnhancing,
                     isShowingEnhanced: model.isShowingEnhanced,
+                    isEnhancementLocked: !model.isEnhancementAvailable,
                     candidates: model.burstThumbnails,
                     selectedCandidate: model.selectedCandidate,
                     onRetake: { model.retakePhoto() },

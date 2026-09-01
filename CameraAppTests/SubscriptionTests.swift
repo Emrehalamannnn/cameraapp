@@ -97,6 +97,15 @@ final class SubscriptionPricingTests: XCTestCase {
         }
     }
 
+    func testTheFallbackTableMatchesThePricesTheAppAdvertises() {
+        // Not the real prices — StoreKit supplies those — but the figures the
+        // paywall shows when the store cannot be reached, and they should not
+        // drift from what was agreed.
+        XCTAssertEqual(SubscriptionPlan.monthly.fallbackPrice, 12.99)
+        XCTAssertEqual(SubscriptionPlan.sixMonth.fallbackPrice, 9.99)
+        XCTAssertEqual(SubscriptionPlan.yearly.fallbackPrice, 14.99)
+    }
+
     func testEveryPlanHasItsOwnProductIdentifier() {
         let identifiers = Set(SubscriptionPlan.allCases.map(\.productID))
         XCTAssertEqual(identifiers.count, SubscriptionPlan.allCases.count)

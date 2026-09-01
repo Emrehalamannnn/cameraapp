@@ -46,6 +46,7 @@ final class SubscriptionService {
 
     @ObservationIgnored private var products: [String: Product] = [:]
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
+    @ObservationIgnored private var messageTask: Task<Void, Never>?
 
     var isPro: Bool { status.isPro }
 
@@ -59,6 +60,7 @@ final class SubscriptionService {
 
     deinit {
         updatesTask?.cancel()
+        messageTask?.cancel()
     }
 
     /// Renewals, refunds and purchases made elsewhere all arrive here.
@@ -115,7 +117,7 @@ final class SubscriptionService {
     func purchase(_ plan: SubscriptionPlan) async -> Bool {
         guard purchaseInFlight == nil else { return false }
         guard let product = products[plan.productID] else {
-            message = "This subscription isn't available yet."
+            present("This subscription isn't available yet.")
             return false
         }
 
@@ -126,7 +128,7 @@ final class SubscriptionService {
             switch try await product.purchase() {
             case .success(let verification):
                 guard case .verified(let transaction) = verification else {
-                    message = "That purchase could not be verified."
+                    present("That purchase could not be verified.")
                     return false
                 }
                 await transaction.finish()
@@ -139,14 +141,14 @@ final class SubscriptionService {
             case .pending:
                 // Ask-to-buy and similar: the purchase may complete later, and
                 // `Transaction.updates` will pick it up when it does.
-                message = "Your purchase is waiting for approval."
+                present("Your purchase is waiting for approval.")
                 return false
 
             @unknown default:
                 return false
             }
         } catch {
-            message = error.localizedDescription
+            present(error.localizedDescription)
             return false
         }
     }
@@ -165,7 +167,7 @@ final class SubscriptionService {
             // necessarily a failure worth shouting about.
         }
         await refreshEntitlement()
-        message = status.isPro ? "Your subscription is active." : "No purchases to restore."
+        present(status.isPro ? "Your subscription is active." : "No purchases to restore.")
     }
 
     // MARK: - Entitlement
@@ -191,7 +193,22 @@ final class SubscriptionService {
         status = isEntitled ? .pro(expires: latestExpiry) : .free
     }
 
+    /// Shows a line of feedback and takes it away again. A message that stays
+    /// until something else replaces it becomes stale advice — "No purchases to
+    /// restore" still sitting there after a successful purchase, say.
+    private func present(_ text: String) {
+        message = text
+        messageTask?.cancel()
+        messageTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            self?.message = nil
+        }
+    }
+
     func clearMessage() {
+        messageTask?.cancel()
+        messageTask = nil
         message = nil
     }
 }

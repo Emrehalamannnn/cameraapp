@@ -15,6 +15,9 @@ struct PhotoReviewView: View {
     let isPhotoAccessDenied: Bool
     var isEnhancing: Bool = false
     var isShowingEnhanced: Bool = false
+    /// Enhancement is a Pro feature. Marked rather than hidden: a button that
+    /// looks ordinary and then asks for money is worse than one that says so.
+    var isEnhancementLocked: Bool = false
     var candidates: [UIImage?] = []
     var selectedCandidate: Int = 0
     let onRetake: () -> Void
@@ -151,6 +154,10 @@ struct PhotoReviewView: View {
                 }
                 Text(isShowingEnhanced ? "Enhanced" : "Enhance")
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
+                if isEnhancementLocked {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 10, weight: .bold))
+                }
             }
             .foregroundStyle(isShowingEnhanced ? Color.black : Color.white)
             .padding(.horizontal, 16)
@@ -165,7 +172,13 @@ struct PhotoReviewView: View {
         }
         .buttonStyle(PressableButtonStyle())
         .disabled(isEnhancing || isSaving)
-        .accessibilityLabel(Text(isShowingEnhanced ? "Show original" : "Enhance photo"))
+        .accessibilityLabel(
+            Text(
+                isEnhancementLocked
+                    ? "Enhance photo, Pro"
+                    : (isShowingEnhanced ? "Show original" : "Enhance photo")
+            )
+        )
     }
 
     private var photoAccessNotice: some View {
