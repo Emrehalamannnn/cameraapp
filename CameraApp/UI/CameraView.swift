@@ -75,6 +75,11 @@ struct CameraView: View {
 
                 GuidanceBanner(state: model.guidance, rotation: model.orientation.controlRotation)
                     .padding(.top, 18)
+                    // Once the shot has been Ready for a beat the instruction
+                    // has said all it can, so it steps aside and leaves the
+                    // picture the screen.
+                    .opacity(model.isReadySettled ? 0 : 1)
+                    .animation(.easeInOut(duration: 0.45), value: model.isReadySettled)
 
                 if model.guidance?.message == .straightenCamera {
                     LevelIndicatorView(
@@ -121,6 +126,21 @@ struct CameraView: View {
                 geometry: geometry,
                 isReady: model.guidance?.isReady == true
             )
+
+            DirectionalCueView(direction: model.guidance?.direction ?? .none)
+
+            #if DEBUG
+            if model.isDebugOverlayVisible {
+                DebugOverlayView(
+                    quality: model.shotQuality,
+                    composition: model.composition,
+                    level: model.level,
+                    faces: model.faces,
+                    geometry: geometry,
+                    configuration: model.analysisConfiguration
+                )
+            }
+            #endif
 
             if let focus = model.focusIndicator {
                 FocusIndicatorView()
@@ -179,14 +199,28 @@ struct CameraView: View {
                 model.toggleAutoCapture()
             }
 
-            GlassCircleButton(
-                systemImage: "grid",
-                accessibilityLabel: model.isGridVisible ? "Hide grid" : "Show grid",
-                isHighlighted: model.isGridVisible,
-                rotation: model.orientation.controlRotation
-            ) {
-                model.toggleGrid()
-            }
+            #if DEBUG
+            // A long press opens the calibration overlay. Debug builds only —
+            // in Release this branch does not exist at all.
+            gridButton.simultaneousGesture(
+                LongPressGesture(minimumDuration: 0.8).onEnded { _ in
+                    model.toggleDebugOverlay()
+                }
+            )
+            #else
+            gridButton
+            #endif
+        }
+    }
+
+    private var gridButton: some View {
+        GlassCircleButton(
+            systemImage: "grid",
+            accessibilityLabel: model.isGridVisible ? "Hide grid" : "Show grid",
+            isHighlighted: model.isGridVisible,
+            rotation: model.orientation.controlRotation
+        ) {
+            model.toggleGrid()
         }
     }
 

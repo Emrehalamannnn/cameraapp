@@ -35,6 +35,8 @@ struct AnalysisConfiguration: Sendable, Equatable {
     var exitReadyDwell: TimeInterval = 0.2
     var autoCaptureDwell: TimeInterval = 0.7
     var focusSettlingDwell: TimeInterval = 0.85
+    /// How long Ready holds before the instruction fades out of the way.
+    var readyFadeDelay: TimeInterval = 1.4
 
     static let standard = AnalysisConfiguration()
 }

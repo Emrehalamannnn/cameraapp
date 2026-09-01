@@ -55,6 +55,11 @@ final class CameraModel {
     private(set) var faces: [DetectedFace] = []
     private(set) var level: LevelAssessment = .unavailable
     private(set) var shotQuality: ShotQualityAssessment = .unknown
+    /// Framing geometry behind the current guidance, for the calibration overlay.
+    private(set) var composition: CompositionAssessment = .noSubject
+    /// True once Ready has held long enough that the instruction has said all
+    /// it usefully can. The UI uses it to get out of the way.
+    private(set) var isReadySettled = false
     private(set) var configuration: CameraConfiguration = .unknown
     private(set) var selectedZoom: Double = 1
     private(set) var flashMode: FlashMode = .auto
@@ -81,10 +86,13 @@ final class CameraModel {
     @ObservationIgnored private let analysisService: FrameAnalysisService
     @ObservationIgnored private let captureService: CaptureService
     @ObservationIgnored private let mediaLibrary = MediaLibraryService()
-    @ObservationIgnored private let analysisConfiguration: AnalysisConfiguration
+    /// Calibration values in force. Exposed so the debug overlay can draw the
+    /// regions the rules actually test against.
+    @ObservationIgnored let analysisConfiguration: AnalysisConfiguration
 
     @ObservationIgnored private var guidanceEngine: GuidanceEngine
     @ObservationIgnored private var autoCaptureController: AutoCaptureController
+    @ObservationIgnored private var readyShownAt: TimeInterval?
     @ObservationIgnored private var analysisTask: Task<Void, Never>?
     @ObservationIgnored private var observationTasks: [Task<Void, Never>] = []
     @ObservationIgnored private var messageTask: Task<Void, Never>?
@@ -213,6 +221,9 @@ final class CameraModel {
         guidance = nil
         level = .unavailable
         shotQuality = .unknown
+        composition = .noSubject
+        isReadySettled = false
+        readyShownAt = nil
         guidanceEngine.reset()
         resetAutoCapture(requiresReadyExit: true)
 
@@ -366,14 +377,20 @@ final class CameraModel {
         if shotQuality != analysis.quality {
             shotQuality = analysis.quality
         }
+        if composition != analysis.composition {
+            composition = analysis.composition
+        }
 
-        let update = guidanceEngine.update(with: analysis, now: CACurrentMediaTime())
+        let now = CACurrentMediaTime()
+        let update = guidanceEngine.update(with: analysis, now: now)
         if guidance != update.state {
             guidance = update.state
+            readyShownAt = update.state?.isReady == true ? now : nil
         }
         if update.didBecomeReady {
             Haptics.shared.readySignal()
         }
+        updateReadySettled(now: now)
 
         let autoUpdate = autoCaptureController.update(
             isEnabled: isAutoCaptureEnabled,
@@ -387,6 +404,34 @@ final class CameraModel {
         if autoUpdate.shouldCapture {
             performCapture()
         }
+    }
+
+    /// Once the shot has been Ready for a beat there is nothing left to say,
+    /// so the instruction fades out and the picture gets the screen back. This
+    /// is the difference between a helpful camera and a fighter-jet HUD.
+    private func updateReadySettled(now: TimeInterval) {
+        let settled: Bool
+        if let shownAt = readyShownAt, guidance?.isReady == true {
+            settled = (now - shownAt) >= analysisConfiguration.readyFadeDelay
+        } else {
+            settled = false
+        }
+        if isReadySettled != settled {
+            isReadySettled = settled
+        }
+    }
+
+    // MARK: - Debug
+
+    /// Calibration overlay. The toggle compiles to nothing outside DEBUG, so
+    /// this stays false in shipping builds.
+    private(set) var isDebugOverlayVisible = false
+
+    func toggleDebugOverlay() {
+        #if DEBUG
+        isDebugOverlayVisible.toggle()
+        Haptics.shared.selectionSignal()
+        #endif
     }
 
     // MARK: - Session events

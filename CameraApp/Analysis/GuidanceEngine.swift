@@ -29,11 +29,43 @@ enum GuidanceMessage: String, Sendable, Equatable, CaseIterable {
     case ready = "Ready"
 
     var isReady: Bool { self == .ready }
+
+    /// The supplemental arrow for spatial instructions. The text stays
+    /// authoritative; this only saves the user from having to read it.
+    ///
+    /// Directions are already mirror-corrected upstream by
+    /// `CompositionEvaluator`, so a left instruction always means "the frame
+    /// should travel left as you see it", front camera included.
+    var direction: GuidanceDirection {
+        switch self {
+        case .moveLeft: return .left
+        case .moveRight: return .right
+        case .raiseCamera: return .up
+        case .lowerCamera: return .down
+        case .stepBack: return .back
+        case .moveCloser: return .closer
+        case .moreLight, .tooMuchLight, .holdStill, .reframeSubject,
+             .straightenCamera, .ready:
+            return .none
+        }
+    }
+}
+
+/// Which way the supplemental cue points.
+enum GuidanceDirection: Sendable, Equatable {
+    case none
+    case left
+    case right
+    case up
+    case down
+    case closer
+    case back
 }
 
 struct GuidanceState: Sendable, Equatable {
     var message: GuidanceMessage
     var isReady: Bool { message.isReady }
+    var direction: GuidanceDirection { message.direction }
 }
 
 /// The outcome of feeding one analysis to the engine.
