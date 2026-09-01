@@ -116,6 +116,7 @@ actor CaptureService {
         applyAnalysisMirroring()
         zoomCapabilities = DeviceLookup.zoomCapabilities(for: device)
         applyZoom(displayFactor: 1, ramp: false)
+        setExposureBias(0)
         frameProcessor.updateSource(device: device, isMirrored: device.position == .front)
     }
 
@@ -324,6 +325,24 @@ actor CaptureService {
 
     /// - Parameter devicePoint: point of interest in device space (`0...1`,
     ///   origin top-left of the sensor in landscape-right).
+    /// Applies exposure compensation, in stops.
+    ///
+    /// - Returns: what the device actually accepted. Every phone has its own
+    ///   range, so the UI follows the hardware rather than guessing at it.
+    @discardableResult
+    func setExposureBias(_ bias: Float) -> Float {
+        guard let device = currentDevice else { return 0 }
+        let clamped = min(max(bias, device.minExposureTargetBias), device.maxExposureTargetBias)
+        do {
+            try device.lockForConfiguration()
+            defer { device.unlockForConfiguration() }
+            device.setExposureTargetBias(clamped, completionHandler: nil)
+            return clamped
+        } catch {
+            return device.exposureTargetBias
+        }
+    }
+
     func focus(at devicePoint: CGPoint, isUserInitiated: Bool) {
         guard let device = currentDevice else { return }
         do {

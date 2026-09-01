@@ -173,6 +173,10 @@ struct CameraView: View {
                     .position(focus.point)
                     .id(focus.id)
                     .transition(.opacity)
+
+                ExposureSlider(bias: model.exposureBias) { model.setExposureBias($0) }
+                    .position(exposureSliderPoint(for: focus.point))
+                    .transition(.opacity)
             }
         }
         .ignoresSafeArea()
@@ -195,6 +199,17 @@ struct CameraView: View {
                 .onEnded { _ in model.endPinchZoom() }
         )
         .animation(.easeInOut(duration: 0.2), value: model.compositionGuide)
+        .animation(.easeOut(duration: 0.18), value: model.focusIndicator)
+    }
+
+    /// Puts the slider beside the focus square, on whichever side has room.
+    private func exposureSliderPoint(for focus: CGPoint) -> CGPoint {
+        let offset: CGFloat = 62
+        let margin: CGFloat = 30
+        let x = focus.x + offset > previewSize.width - margin
+            ? focus.x - offset
+            : focus.x + offset
+        return CGPoint(x: x, y: focus.y)
     }
 
     // MARK: - Controls
@@ -211,6 +226,23 @@ struct CameraView: View {
             }
             .opacity(model.configuration.isFlashAvailable ? 1 : 0.35)
             .disabled(!model.configuration.isFlashAvailable)
+
+            if model.exposureBias != 0 {
+                // The correction outlives the focus square that set it, so it
+                // says so — and tapping puts it back to what the meter wants.
+                Button { model.clearExposureBias() } label: {
+                    Text(ExposureFormatter.label(for: model.exposureBias))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color.yellow)
+                        .rotationEffect(model.orientation.controlRotation)
+                        .padding(.horizontal, 10)
+                        .frame(height: 30)
+                        .background(Capsule().fill(.ultraThinMaterial))
+                }
+                .buttonStyle(PressableButtonStyle(pressedScale: 0.94))
+                .accessibilityLabel(Text("Exposure \(ExposureFormatter.label(for: model.exposureBias)), reset"))
+                .transition(.opacity)
+            }
 
             Spacer(minLength: 0)
 

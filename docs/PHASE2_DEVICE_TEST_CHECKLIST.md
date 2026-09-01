@@ -144,8 +144,8 @@ considers good framing, so test them against the thing they are for.
 
 ## Calibration overlay (debug builds only)
 
-- Long-press the grid button. Confirm the overlay appears in a debug build and
-  that the numbers track what you see.
+- Long-press the settings button. Confirm the overlay appears in a debug build
+  and that the numbers track what you see.
 - Confirm it cannot be summoned in a Release build.
 
 ## Expression gating
@@ -167,3 +167,60 @@ considers good framing, so test them against the thing they are for.
 - Tap another frame and confirm the large preview switches and Save keeps that
   frame.
 - Confirm choosing a different frame clears any enhancement you had applied.
+
+## Settings, subscription and the new controls
+
+None of this can be verified in the Simulator or in CI. It needs a device, and
+the subscription half needs either a StoreKit configuration file in the scheme
+or real products in App Store Connect.
+
+### First launch
+
+- Delete the app, reinstall, and launch. Confirm the paywall appears **after**
+  the camera permission prompt is answered and the preview is live — not over a
+  black screen.
+- Dismiss it. Confirm it does not come back on the next launch.
+- Deny camera access instead, and confirm no paywall appears over the
+  permission screen.
+
+### Paywall
+
+- Confirm each plan shows a real store price, not the `$12.99 / $9.99 / $14.99`
+  fallbacks. Fallbacks on a device with a working store means the product IDs
+  do not match App Store Connect.
+- Confirm the per-month line and the SAVE badge agree with the prices shown,
+  and that the monthly plan carries no badge.
+- Buy, then confirm Pro appears in Settings with a renewal date, the locked
+  modes unlock, and the PRO badges disappear.
+- Restore purchases on a second device signed into the same Apple ID.
+- Refund or expire the subscription in the sandbox and confirm the app returns
+  to free — including that a Pro shooting mode falls back to Portrait and a Pro
+  guide falls back to thirds rather than disappearing.
+
+### Camera settings
+
+- Switch photo resolution to Maximum and confirm captures are visibly larger in
+  Photos, and that capture-to-review time is still acceptable.
+- Set preview frame rate to 60 and confirm the preview is smoother and the
+  device does not get noticeably hot within a few minutes.
+- Set Responsiveness to Relaxed and to Responsive, and report whether the
+  guidance feels sluggish or twitchy at either end.
+- Turn on Mirror front photos, take a selfie, and confirm the saved photo
+  matches the preview.
+- Confirm every preference survives force-quitting and relaunching.
+
+### Composition guides and self-timer
+
+- Cycle all four guides and confirm each is readable over a white wall and a
+  night scene without dominating either.
+- Confirm the square guide's bright area matches what a 1:1 crop keeps.
+- Set the timer to 3s, press the shutter, and confirm the countdown is legible
+  from arm's length. Press again mid-count and confirm it cancels.
+- Start a countdown and background the app; confirm no photo is taken.
+- Confirm Auto Capture still fires immediately and does not wait for the timer.
+
+### Volume-button capture
+
+- Press either volume key and confirm a photo is taken (iOS 17.2 and later).
+- Confirm the volume keys still change volume in other apps afterwards, and
+  that they do nothing while the review screen is open.

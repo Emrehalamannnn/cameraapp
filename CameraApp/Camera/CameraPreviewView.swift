@@ -8,6 +8,7 @@
 //
 
 import AVFoundation
+import AVKit
 import SwiftUI
 import UIKit
 
@@ -43,6 +44,9 @@ final class PreviewController {
     /// Called once the preview layer exists, so the model can build its
     /// rotation coordinator against it.
     var onAttach: (() -> Void)?
+
+    /// Called when a hardware capture button — either volume key — is pressed.
+    var onHardwareShutter: (() -> Void)?
 
     var previewLayer: AVCaptureVideoPreviewLayer? { previewView?.previewLayer }
 
@@ -85,6 +89,18 @@ struct CameraPreview: UIViewRepresentable {
     func makeUIView(context: Context) -> CameraPreviewUIView {
         let view = CameraPreviewUIView(session: session)
         controller.attach(view)
+
+        // The volume keys take the photo, the way they do in every other
+        // camera app — and the way people hold a phone one-handed expects.
+        // The system only routes them here while this app is in the
+        // foreground with a capture session running.
+        if #available(iOS 17.2, *) {
+            let controller = controller
+            view.addInteraction(AVCaptureEventInteraction { event in
+                guard event.phase == .ended else { return }
+                Task { @MainActor in controller.onHardwareShutter?() }
+            })
+        }
         return view
     }
 

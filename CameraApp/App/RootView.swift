@@ -27,16 +27,17 @@ struct RootView: View {
             .fullScreenCover(isPresented: $isShowingPaywall, onDismiss: applySettings) {
                 PaywallView(service: subscription) { isShowingPaywall = false }
             }
-            .task {
-                await subscription.start()
-                // First launch gets the offer once. If the store never answers
-                // we still show it — the fallback prices keep the screen
-                // honest about what a subscription costs.
-                if !settings.hasSeenPaywall {
-                    settings.hasSeenPaywall = true
-                    if !subscription.isPro {
-                        isShowingPaywall = true
-                    }
+            .task { await subscription.start() }
+            // The offer waits for the camera to be up. Asking for money over a
+            // black screen — before the permission prompt has even been
+            // answered — is how a camera app gets deleted before it has taken
+            // a photo. If the store never answers, it still appears: the
+            // fallback prices are honest about what a subscription costs.
+            .onChange(of: model.status) { _, status in
+                guard status.isRunning, !settings.hasSeenPaywall else { return }
+                settings.hasSeenPaywall = true
+                if !subscription.isPro {
+                    isShowingPaywall = true
                 }
             }
             // A locked control was tapped somewhere in the camera UI.

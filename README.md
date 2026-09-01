@@ -1,10 +1,10 @@
-# CameraApp — AI-assisted camera, Phase 1 foundation
+# CameraApp — an AI-assisted camera
 
-A native iOS camera built so that a real-time "AI photographer" can be layered
-onto it without rewriting the camera. Phase 1 delivers a complete, working
-camera: live preview, capture, review, save — plus a running frame-analysis
-pipeline that already measures light, steadiness and faces, and turns those
-signals into one calm on-screen instruction.
+A native iOS camera that watches the frame and tells you the one thing worth
+changing. Live preview, capture, review and save, on top of a frame-analysis
+pipeline that measures light, steadiness, faces, body pose and framing, and
+reduces all of it to a single calm instruction — which disappears the moment
+you are lined up.
 
 **Swift · SwiftUI · AVFoundation · Vision · PhotoKit · Core Motion · Swift concurrency.**
 No React Native, Capacitor, Expo, Flutter or WebView anywhere in the stack.
@@ -42,6 +42,8 @@ and nothing above `CaptureService` knows AVFoundation exists.
 | `GuidanceEngine` | `struct` (pure) | Reduces analyses to exactly one message, with dwell times so it never flickers. |
 | `MediaLibraryService` | `actor` | Add-only PhotoKit writes. |
 | `CameraModel` | `@MainActor @Observable` | All UI state; orchestrates the three services and owns the lifecycle. |
+| `CameraSettings` | `@MainActor @Observable` | Persisted preferences. The model reads them; it does not own them. |
+| `SubscriptionService` | `@MainActor @Observable` | The only thing that talks to StoreKit. |
 
 The analysis vocabulary (`FrameAnalysis`, `LightingAssessment`,
 `StabilityAssessment`, `DetectedFace`, `CompositionAssessment`,
@@ -52,8 +54,9 @@ seam future AI modules extend.
 
 * The preview is an `AVCaptureVideoPreviewLayer` backing a `UIView`, so frames
   never pass through SwiftUI.
-* Analysis is throttled two ways: a minimum interval (12 Hz) **and** a busy flag,
-  so slow frames can never queue up behind each other.
+* Analysis is throttled two ways: a minimum interval (8–20 Hz, set by the
+  Responsiveness preference) **and** a busy flag, so slow frames can never
+  queue up behind each other.
 * Frames are never copied. The `CVPixelBuffer` is passed by reference, read in
   place (locked read-only), and handed to Vision as-is. Rotation is expressed as
   a `CGImagePropertyOrientation` rather than by rotating pixels.
@@ -68,14 +71,82 @@ seam future AI modules extend.
 `CameraAppTests` covers the pure layers: guidance priority and dwell behaviour,
 composition (including the mirrored front-camera case), the EV100 lighting
 estimate, stability scoring, luma sampling against synthesised pixel buffers,
-aspect-fill preview geometry, and the zoom factor mapping.
+aspect-fill preview geometry, the zoom factor mapping, the paywall's per-month
+and savings arithmetic, the free/Pro boundary, and that every preference
+survives a relaunch.
+
+A macOS GitHub Actions workflow builds the app target and runs the suite
+against a real iOS simulator on every push, so "it compiles" is a fact rather
+than a claim.
+
+## Free and Pro
+
+The free tier is a real camera, not a demo: manual capture at full quality,
+live framing guidance, the thirds grid, the level, zoom, flash, the self-timer
+and Portrait mode all work without paying. A camera that nags before it has
+been useful gets deleted.
+
+Pro buys the things that take work off your hands.
+
+| | Free | Pro |
+| --- | --- | --- |
+| Shooting modes | Portrait | Outfit, Food, Product, Landscape, Night, Story |
+| Auto Capture | — | Fires the shutter itself when the shot is right |
+| Best Shot | — | Short burst, keeps the best few frames |
+| Reference framing | — | Match the composition of a photo you like |
+| Enhancement | — | A conservative clean-up on the review screen |
+| Composition guides | Off, thirds | Golden ratio, live square-crop frame |
+| Capture resolution | Standard | Maximum the camera supports |
+
+`PremiumGate` is the single table that decides this. Moving the boundary is one
+edit rather than an audit.
+
+Entitlement is always read from `Transaction.currentEntitlements` and never
+cached as a local flag — a stored `isPro` boolean is a refund or a lapsed
+renewal waiting to be wrong. `Transaction.updates` is watched for the session,
+so a renewal, a refund, or a purchase made on another device lands without a
+relaunch. Unverified and revoked transactions grant nothing. When Pro lapses
+while a Pro mode or guide is selected, the camera drops back to Portrait and
+thirds rather than breaking.
+
+## Settings
+
+Everything that is not worth a button mid-shot lives behind one control on the
+camera screen: subscription status and restore purchases, photo resolution,
+preview frame rate, front-camera mirroring, composition guide, level indicator,
+guidance responsiveness, haptics, self-timer, Auto Capture and Best Shot.
+
+The front bar is left with the four things you actually reach for while
+framing: flash, reference, Auto Capture, settings.
+
+Either volume key takes the photo (iOS 17.2+, via `AVCaptureEventInteraction`),
+which is how most people hold a phone one-handed.
+
+## Before shipping
+
+Three things in this repository are placeholders and have to be replaced:
+
+* The product identifiers in `SubscriptionPlan.productID` (`com.example.…`)
+  must match real subscriptions in App Store Connect, in one subscription
+  group, or `Product.products(for:)` returns nothing and the paywall stays on
+  its fallback prices.
+* The privacy URL in `PaywallView` points at `example.com`.
+* Add a StoreKit configuration file to the scheme to exercise purchase,
+  restore, expiry and refund locally — none of that can be tested against the
+  real store from a development build.
+
+The prices in `SubscriptionPlan.fallbackPrice` are fallbacks for layout and for
+a store that cannot be reached. The price shown to a customer always comes from
+StoreKit, which is the only thing that knows their currency and storefront.
 
 ## Privacy
 
 Everything the app does happens on the device.
 
-There is no networking code in the project, no analytics, no account and no
-backend. Face detection, body pose, framing analysis, best-shot scoring and
+There is no analytics, no account and no backend. The only thing that leaves
+the device is a StoreKit purchase, which goes to Apple and carries no photo,
+no analysis and no identifier of ours — there is no other networking code in
+the project. Face detection, body pose, framing analysis, best-shot scoring and
 enhancement all run through Vision and Core Image locally. Reference photos are
 read through the system photo picker, which hands over a single image without
 the app ever gaining access to the library, and the only Photos permission

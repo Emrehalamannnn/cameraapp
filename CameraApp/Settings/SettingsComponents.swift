@@ -115,7 +115,7 @@ struct SettingsToggleRow: View {
 }
 
 /// A row of pill options. Used instead of a wheel picker because there are only
-/// ever two or three choices and they should be visible without a tap.
+/// ever a handful of choices and they should be readable without a tap.
 struct SettingsChoiceRow<Option: Identifiable & Hashable>: View {
 
     let title: String
@@ -139,34 +139,42 @@ struct SettingsChoiceRow<Option: Identifiable & Hashable>: View {
                 Spacer()
             }
 
-            HStack(spacing: 8) {
-                ForEach(options) { option in
-                    let isSelected = option == selection
-                    let isLocked = lockedOptions.contains(option.id)
-                    Button {
-                        selection = option
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(option[keyPath: label])
-                                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            if isLocked { ProBadge() }
+            // Scrolls rather than wraps: four options with a PRO badge on two
+            // of them will not fit across a small phone, and a clipped pill
+            // looks like a bug.
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(options) { option in
+                        let isSelected = option == selection
+                        let isLocked = lockedOptions.contains(option.id)
+                        Button {
+                            selection = option
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(option[keyPath: label])
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                if isLocked { ProBadge() }
+                            }
+                            .foregroundStyle(isSelected ? Color.black : Color.white.opacity(0.8))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background {
+                                Capsule().fill(
+                                    isSelected
+                                        ? AnyShapeStyle(Color.readyAccent)
+                                        : AnyShapeStyle(Color.white.opacity(0.08))
+                                )
+                            }
                         }
-                        .foregroundStyle(isSelected ? Color.black : Color.white.opacity(0.8))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background {
-                            Capsule().fill(
-                                isSelected
-                                    ? AnyShapeStyle(Color.readyAccent)
-                                    : AnyShapeStyle(Color.white.opacity(0.08))
-                            )
-                        }
+                        .buttonStyle(PressableButtonStyle(pressedScale: 0.96))
                     }
-                    .buttonStyle(PressableButtonStyle(pressedScale: 0.96))
                 }
-                Spacer(minLength: 0)
+                .padding(.leading, 34)
+                .padding(.trailing, 4)
+                // The pressed pill scales down, so the row needs a little
+                // vertical room inside the scroll view or it gets clipped.
+                .padding(.vertical, 2)
             }
-            .padding(.leading, 34)
 
             if let detail {
                 Text(selection[keyPath: detail])

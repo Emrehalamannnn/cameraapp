@@ -83,6 +83,9 @@ final class CameraModel {
     private(set) var isInterrupted = false
     private(set) var review: PhotoReview?
     private(set) var focusIndicator: FocusIndicator?
+    /// Exposure compensation in stops. Survives the focus square fading, so
+    /// the top bar shows it until it is cleared or another tap resets it.
+    private(set) var exposureBias: Float = 0
     private(set) var shutterFlashOpacity: Double = 0
     private(set) var message: String?
     private(set) var isPhotoAccessDenied = false
@@ -177,6 +180,9 @@ final class CameraModel {
         previewController.onAttach = { [weak self] in
             guard let self else { return }
             Task { await self.refreshRotationCoordinator() }
+        }
+        previewController.onHardwareShutter = { [weak self] in
+            self?.capturePhoto()
         }
     }
 
@@ -295,6 +301,8 @@ final class CameraModel {
         readyShownAt = nil
         guidanceEngine.reset()
         resetAutoCapture(requiresReadyExit: true)
+        // The other camera meters for itself.
+        exposureBias = 0
 
         Task {
             defer { isSwitchingCamera = false }
@@ -346,12 +354,38 @@ final class CameraModel {
         focusIndicator = indicator
         signalSelection()
         suppressAutoCaptureForSettling()
+        // Metering somewhere new starts from what the meter says, not from a
+        // correction that was aimed at the last subject.
+        setExposureBias(0)
 
         Task { await captureService.focus(at: devicePoint, isUserInitiated: true) }
+        holdFocusIndicator(indicator, seconds: 1.2)
+    }
 
+    /// Exposure compensation, driven by the slider beside the focus square.
+    /// Adjusting keeps the square on screen — it is the only thing anchoring
+    /// the slider to the point being metered.
+    func setExposureBias(_ bias: Float) {
+        exposureBias = bias
+        if let indicator = focusIndicator {
+            holdFocusIndicator(indicator, seconds: 2.5)
+        }
+        Task {
+            let applied = await captureService.setExposureBias(bias)
+            // The device has the final say on the range it will accept.
+            if abs(applied - bias) > 0.001 { exposureBias = applied }
+        }
+    }
+
+    func clearExposureBias() {
+        setExposureBias(0)
+        signalSelection()
+    }
+
+    private func holdFocusIndicator(_ indicator: FocusIndicator, seconds: Double) {
         focusTask?.cancel()
         focusTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(1.2))
+            try? await Task.sleep(for: .seconds(seconds))
             guard !Task.isCancelled, let self, self.focusIndicator?.id == indicator.id else { return }
             self.focusIndicator = nil
         }
