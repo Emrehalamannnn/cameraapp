@@ -70,6 +70,17 @@ composition (including the mirrored front-camera case), the EV100 lighting
 estimate, stability scoring, luma sampling against synthesised pixel buffers,
 aspect-fill preview geometry, and the zoom factor mapping.
 
+## Privacy
+
+Everything the app does happens on the device.
+
+There is no networking code in the project, no analytics, no account and no
+backend. Face detection, body pose, framing analysis, best-shot scoring and
+enhancement all run through Vision and Core Image locally. Reference photos are
+read through the system photo picker, which hands over a single image without
+the app ever gaining access to the library, and the only Photos permission
+requested is add-only — the app can save your photos and cannot read them.
+
 ## What Phase 2 adds
 
 Aesthetic scoring, auto-capture at the ideal moment, photo enhancement, and

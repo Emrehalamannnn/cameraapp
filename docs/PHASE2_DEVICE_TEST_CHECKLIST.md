@@ -69,3 +69,81 @@ direction item, report **correct / reversed / inconsistent**.
 
 Record the iPhone model, iOS version, active lens, light conditions, and whether
 the phone was handheld or supported with every calibration report.
+
+---
+
+# Phase 2.5 additions
+
+Everything below was added after the original Phase 2 checklist and has the
+same status: the logic is unit tested, the feel is not. Report **too early /
+correct / too late** for thresholds and **correct / reversed / inconsistent**
+for directions.
+
+## Shooting modes
+
+The mode strip sits above the zoom controls. Each mode changes what the app
+considers good framing, so test them against the thing they are for.
+
+- **Portrait** — head-and-shoulders. Should behave exactly as it did before
+  modes existed. Report any change in feel from the Phase 2 baseline.
+- **Outfit** — stand back for a full-body shot. Report whether the app stops
+  asking you to move closer at a distance that actually frames the whole body,
+  and whether Fit The Whole Body appears when the frame cuts your knees or
+  ankles. This is the pose pass; report if it fires when it should not.
+- **Story** — report whether the framing it settles on leaves usable room at
+  the top for text.
+- **Food / Product** — shoot a plate or an object, with and without a person
+  visible behind it. Report whether the app ever gives face-based framing
+  advice in these modes. It should not.
+- **Landscape** — report whether the horizon tolerance feels right. This is the
+  tightest in the app; it should catch a tilt you can see but not nag at one
+  you cannot.
+- **Night** — shoot in a genuinely dark room. Report whether More Light Needed
+  stops appearing, and whether Hold Still becomes noticeably stricter.
+
+## Best shot
+
+- Turn on Best Shot (stacked-squares icon). Take a photo of someone blinking
+  deliberately. Report whether the kept frame has their eyes open.
+- Report the shutter-to-review delay with Best Shot on. Three frames should
+  feel deliberate, not slow. If it feels slow, report the count to reduce.
+- Report whether the "Kept the best of 3" message is useful or noise.
+
+## Reference framing
+
+- Tap the photo icon, pick a portrait you like. Report whether the guidance
+  then steers you toward that photo's framing rather than a centred one.
+- With an off-centre reference, confirm the app asks you to move the frame in
+  the direction that actually matches the reference.
+- Report whether clearing the reference returns behaviour to the mode default.
+
+## Enhancement
+
+- Take an underexposed photo, tap Enhance. Report whether the result looks
+  like a better photograph or like a processed one. **Faces are the thing to
+  watch: any hint of plastic skin means the ceilings are too high.**
+- Toggle Enhanced / original repeatedly. Confirm the original is unchanged.
+- Save while Enhanced is showing and confirm the saved file is the enhanced
+  one; repeat with the original showing.
+- Take an already well-exposed photo and tap Enhance. Report whether "Already
+  looks good" appears rather than a pointless change.
+
+## Guidance that gets out of the way
+
+- Line up a good shot and hold it. Report whether the instruction fading out
+  after roughly a second and a half feels right, too eager, or too slow.
+- Confirm the shutter ring stays accented while Ready even after the text has
+  gone, so you can still tell the app is happy.
+
+## Directional cue
+
+- Report whether the edge chevron helps or distracts, and whether it ever
+  covers the subject.
+- On the front camera, confirm the chevron points the same way the instruction
+  reads.
+
+## Calibration overlay (debug builds only)
+
+- Long-press the grid button. Confirm the overlay appears in a debug build and
+  that the numbers track what you see.
+- Confirm it cannot be summoned in a Release build.
