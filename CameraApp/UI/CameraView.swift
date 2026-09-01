@@ -48,9 +48,12 @@ struct CameraView: View {
                     isPhotoAccessDenied: model.isPhotoAccessDenied,
                     isEnhancing: model.isEnhancing,
                     isShowingEnhanced: model.isShowingEnhanced,
+                    candidates: model.burstThumbnails,
+                    selectedCandidate: model.selectedCandidate,
                     onRetake: { model.retakePhoto() },
                     onSave: { model.saveReviewedPhoto() },
-                    onToggleEnhancement: { model.toggleEnhancement() }
+                    onToggleEnhancement: { model.toggleEnhancement() },
+                    onSelectCandidate: { model.selectCandidate($0) }
                 )
                 .transition(.opacity)
                 .zIndex(2)

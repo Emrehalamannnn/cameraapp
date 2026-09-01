@@ -81,6 +81,10 @@ final class CameraModel {
     private(set) var isAutoCaptureEnabled = false
     /// Takes a short burst and keeps the frame that scored best.
     private(set) var isBestShotEnabled = false
+    /// The shortlist from a burst, best first. Empty for a single capture.
+    private(set) var burstCandidates: [CapturedPhoto] = []
+    private(set) var burstThumbnails: [UIImage?] = []
+    private(set) var selectedCandidate = 0
     private(set) var autoCaptureProgress: Double = 0
 
     var isReviewing: Bool { review != nil }
@@ -342,15 +346,27 @@ final class CameraModel {
         )
         guard let first = photos.first else { throw CameraError.photoDataUnavailable }
         guard photos.count > 1 else { return first }
-        let chosen = await Self.pickBest(from: photos) ?? first
-        present(message: "Kept the best of \(photos.count)")
-        return chosen
+
+        let shortlist = await Self.shortlist(from: photos, limit: 3)
+        guard let best = shortlist.photos.first else { return first }
+        burstCandidates = shortlist.photos
+        burstThumbnails = shortlist.thumbnails
+        selectedCandidate = 0
+        present(message: "Best of \(photos.count)")
+        return best
+    }
+
+    private func clearBurstShortlist() {
+        burstCandidates = []
+        burstThumbnails = []
+        selectedCandidate = 0
     }
 
     func retakePhoto() {
         review = nil
         enhancedReview = nil
         isShowingEnhanced = false
+        clearBurstShortlist()
         isPhotoAccessDenied = false
         resetAutoCapture(requiresReadyExit: true)
         Task { await captureService.setAnalysisEnabled(true) }
@@ -372,6 +388,7 @@ final class CameraModel {
                 self.review = nil
                 enhancedReview = nil
                 isShowingEnhanced = false
+                clearBurstShortlist()
                 isPhotoAccessDenied = false
                 resetAutoCapture(requiresReadyExit: true)
                 await captureService.setAnalysisEnabled(true)
@@ -563,12 +580,17 @@ final class CameraModel {
         present(message: isBestShotEnabled ? "Best shot on" : "Best shot off")
     }
 
-    /// Scores a burst and returns the keeper.
+    /// Scores a burst and returns a shortlist, best first.
     ///
     /// Runs off the main actor: decoding and scoring three frames is real work
-    /// and the preview is still live behind the review screen.
-    private static func pickBest(from photos: [CapturedPhoto]) async -> CapturedPhoto? {
-        await Task.detached(priority: .userInitiated) { () -> CapturedPhoto? in
+    /// and the preview is still live behind the review screen. Thumbnails come
+    /// back with it so the strip does not have to decode again on the main
+    /// thread.
+    private static func shortlist(
+        from photos: [CapturedPhoto],
+        limit: Int
+    ) async -> (photos: [CapturedPhoto], thumbnails: [UIImage?]) {
+        await Task.detached(priority: .userInitiated) { () -> ([CapturedPhoto], [UIImage?]) in
             var scores: [ShotScore] = []
             for (index, photo) in photos.enumerated() {
                 guard let image = photo.makeScoringImage(
@@ -576,10 +598,31 @@ final class CameraModel {
                 ) else { continue }
                 scores.append(ShotScorer.score(image: image, index: index))
             }
-            guard let best = BestShotSelector.best(scores),
-                  photos.indices.contains(best.id) else { return nil }
-            return photos[best.id]
+            let ranked = BestShotSelector.rank(scores, limit: limit)
+                .compactMap { photos.indices.contains($0.id) ? photos[$0.id] : nil }
+            guard !ranked.isEmpty else { return (photos, []) }
+            let thumbnails = ranked.map { candidate -> UIImage? in
+                candidate.makeScoringImage(maxDimension: 220).map(UIImage.init(cgImage:))
+            }
+            return (ranked, thumbnails)
         }.value
+    }
+
+    /// Switches the review to another frame from the shortlist.
+    func selectCandidate(_ index: Int) {
+        guard burstCandidates.indices.contains(index), index != selectedCandidate else { return }
+        selectedCandidate = index
+        // Enhancement belongs to the frame it was computed from.
+        enhancedReview = nil
+        isShowingEnhanced = false
+        Haptics.shared.selectionSignal()
+
+        let photo = burstCandidates[index]
+        Task {
+            let image = await photo.makePreviewImage(maxDimension: 2200)
+            guard selectedCandidate == index else { return }
+            review = PhotoReview(photo: photo, image: image)
+        }
     }
 
     // MARK: - Shooting mode

@@ -15,9 +15,12 @@ struct PhotoReviewView: View {
     let isPhotoAccessDenied: Bool
     var isEnhancing: Bool = false
     var isShowingEnhanced: Bool = false
+    var candidates: [UIImage?] = []
+    var selectedCandidate: Int = 0
     let onRetake: () -> Void
     let onSave: () -> Void
     var onToggleEnhancement: () -> Void = {}
+    var onSelectCandidate: (Int) -> Void = { _ in }
 
     var body: some View {
         ZStack {
@@ -41,6 +44,11 @@ struct PhotoReviewView: View {
                     photoAccessNotice
                         .padding(.horizontal, 24)
                         .padding(.bottom, 18)
+                }
+
+                if candidates.count > 1 {
+                    candidateStrip
+                        .padding(.bottom, 12)
                 }
 
                 enhanceControl
@@ -85,6 +93,47 @@ struct PhotoReviewView: View {
                 .padding(.bottom, 10)
             }
         }
+    }
+
+    /// The shortlist from a burst, best first. Small and out of the way: the
+    /// app has already made a choice, and this only exists for the times it
+    /// chose differently to you.
+    private var candidateStrip: some View {
+        HStack(spacing: 8) {
+            ForEach(Array(candidates.enumerated()), id: \.offset) { index, thumbnail in
+                Button {
+                    onSelectCandidate(index)
+                } label: {
+                    Group {
+                        if let thumbnail {
+                            Image(uiImage: thumbnail)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                        } else {
+                            Color.white.opacity(0.15)
+                        }
+                    }
+                    .frame(width: 46, height: 60)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .strokeBorder(
+                                index == selectedCandidate ? Color.readyAccent : Color.white.opacity(0.25),
+                                lineWidth: index == selectedCandidate ? 2 : 0.5
+                            )
+                    }
+                }
+                .buttonStyle(PressableButtonStyle())
+                .accessibilityLabel(Text("Alternative \(index + 1)"))
+                .accessibilityAddTraits(index == selectedCandidate ? [.isSelected] : [])
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background {
+            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.ultraThinMaterial)
+        }
+        .animation(.easeOut(duration: 0.2), value: selectedCandidate)
     }
 
     /// Enhancement is opt-in and reversible: the original is always kept, and
