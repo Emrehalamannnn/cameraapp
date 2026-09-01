@@ -64,6 +64,7 @@ struct GuidanceBanner: View {
         case .lowerCamera: return "arrow.down"
         case .reframeSubject: return "viewfinder"
         case .straightenCamera: return "rotate.left"
+        case .fitWholeBody: return "figure.stand"
         }
     }
 }
