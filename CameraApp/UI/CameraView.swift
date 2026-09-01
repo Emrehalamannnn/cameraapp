@@ -100,6 +100,8 @@ struct CameraView: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 4)
 
+                statusChips
+
                 GuidanceBanner(state: model.guidance, rotation: model.orientation.controlRotation)
                     .padding(.top, 18)
                     // Once the shot has been Ready for a beat the instruction
@@ -129,6 +131,8 @@ struct CameraView: View {
                     .padding(.bottom, 8)
             }
             .animation(.easeInOut(duration: 0.2), value: model.message)
+            .animation(.easeInOut(duration: 0.18), value: model.exposureBias)
+            .animation(.easeInOut(duration: 0.18), value: model.captureTimer)
         }
         .animation(.easeOut(duration: 0.15), value: model.countdownRemaining)
     }
@@ -228,23 +232,6 @@ struct CameraView: View {
             .opacity(model.configuration.isFlashAvailable ? 1 : 0.35)
             .disabled(!model.configuration.isFlashAvailable)
 
-            if model.exposureBias != 0 {
-                // The correction outlives the focus square that set it, so it
-                // says so — and tapping puts it back to what the meter wants.
-                Button { model.clearExposureBias() } label: {
-                    Text(ExposureFormatter.label(for: model.exposureBias))
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.yellow)
-                        .rotationEffect(model.orientation.controlRotation)
-                        .padding(.horizontal, 10)
-                        .frame(height: 30)
-                        .background(Capsule().fill(.ultraThinMaterial))
-                }
-                .buttonStyle(PressableButtonStyle(pressedScale: 0.94))
-                .accessibilityLabel(Text("Exposure \(ExposureFormatter.label(for: model.exposureBias)), reset"))
-                .transition(.opacity)
-            }
-
             Spacer(minLength: 0)
 
             referenceControl
@@ -274,6 +261,49 @@ struct CameraView: View {
             #else
             settingsButton
             #endif
+        }
+    }
+
+    /// Anything currently in force that the buttons do not already show.
+    /// A chip is only here while it has something to say, and tapping it
+    /// deals with what it says — so no state is left for you to go hunting.
+    @ViewBuilder
+    private var statusChips: some View {
+        if model.captureTimer != .off || model.exposureBias != 0 {
+            HStack(spacing: 8) {
+                if model.captureTimer != .off {
+                    // A timer set days ago should not be a surprise the next time
+                    // the shutter is pressed.
+                    HUDChip(
+                        systemImage: "clock",
+                        text: model.captureTimer.title,
+                        rotation: model.orientation.controlRotation,
+                        accessibilityLabel: "Self-timer \(model.captureTimer.title), change"
+                    ) {
+                        model.cycleCaptureTimer()
+                    }
+                    .transition(.opacity)
+                }
+
+                if model.exposureBias != 0 {
+                    // The correction outlives the focus square that set it, so it
+                    // says so — and tapping puts it back to what the meter wants.
+                    HUDChip(
+                        systemImage: "sun.max",
+                        text: ExposureFormatter.label(for: model.exposureBias),
+                        tint: .yellow,
+                        rotation: model.orientation.controlRotation,
+                        accessibilityLabel: "Exposure \(ExposureFormatter.label(for: model.exposureBias)), reset"
+                    ) {
+                        model.clearExposureBias()
+                    }
+                    .transition(.opacity)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 10)
         }
     }
 

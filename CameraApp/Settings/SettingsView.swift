@@ -41,6 +41,10 @@ struct SettingsView: View {
         }
         .safeAreaInset(edge: .top) { header }
         .preferredColorScheme(.dark)
+        // Settings is a reading surface, so its text scales — unlike the
+        // camera HUD, where the control sizes are deliberate. Capped, because
+        // past accessibility2 the pill rows stop being rows.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
         .sheet(isPresented: $isShowingPaywall) {
             PaywallView(service: subscription) { isShowingPaywall = false }
         }
@@ -51,7 +55,7 @@ struct SettingsView: View {
     private var header: some View {
         HStack {
             Text("Settings")
-                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .font(.system(.title2, design: .rounded).weight(.bold))
                 .foregroundStyle(.white)
             Spacer()
             Button(action: onDismiss) {
@@ -79,11 +83,11 @@ struct SettingsView: View {
                         .foregroundStyle(Color.readyAccent)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Pro is active")
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            .font(.system(.subheadline, design: .rounded).weight(.semibold))
                             .foregroundStyle(.white)
                         if case .pro(let expires) = subscription.status, let expires {
                             Text("Renews \(expires.formatted(date: .abbreviated, time: .omitted))")
-                                .font(.system(size: 12))
+                                .font(.system(.caption, design: .default))
                                 .foregroundStyle(.white.opacity(0.5))
                         }
                     }
@@ -108,10 +112,10 @@ struct SettingsView: View {
                             .background(Circle().fill(Color.readyAccent))
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Upgrade to Pro")
-                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                .font(.system(.subheadline, design: .rounded).weight(.semibold))
                                 .foregroundStyle(.white)
                             Text("All modes, Auto Capture, Best Shot and more")
-                                .font(.system(size: 12))
+                                .font(.system(.caption, design: .default))
                                 .foregroundStyle(.white.opacity(0.5))
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -133,11 +137,11 @@ struct SettingsView: View {
             } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(.subheadline, design: .default).weight(.semibold))
                         .foregroundStyle(.white.opacity(0.75))
                         .frame(width: 22)
                     Text("Restore purchases")
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.system(.subheadline, design: .default).weight(.medium))
                         .foregroundStyle(.white)
                     Spacer()
                     if subscription.isRestoring {
@@ -153,7 +157,7 @@ struct SettingsView: View {
             if let message = subscription.message {
                 SettingsDivider()
                 Text(message)
-                    .font(.system(size: 12.5))
+                    .font(.system(.caption, design: .default))
                     .foregroundStyle(.white.opacity(0.6))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
@@ -322,11 +326,11 @@ struct SettingsView: View {
         SettingsSection(title: "About") {
             HStack {
                 Text("Version")
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.system(.subheadline, design: .default).weight(.medium))
                     .foregroundStyle(.white)
                 Spacer()
                 Text(Bundle.main.appVersion)
-                    .font(.system(size: 14))
+                    .font(.system(.subheadline, design: .default))
                     .foregroundStyle(.white.opacity(0.5))
             }
             .padding(.horizontal, 16)
@@ -336,10 +340,10 @@ struct SettingsView: View {
 
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "lock.shield")
-                    .font(.system(size: 14))
+                    .font(.system(.subheadline, design: .default))
                     .foregroundStyle(Color.readyAccent)
                 Text("Every photo is analysed on this device. Nothing is uploaded, and the app has no account and no analytics.")
-                    .font(.system(size: 12.5))
+                    .font(.system(.caption, design: .default))
                     .foregroundStyle(.white.opacity(0.55))
                     .fixedSize(horizontal: false, vertical: true)
             }

@@ -98,6 +98,26 @@ final class CameraModel {
     var isReferenceFramingAvailable: Bool {
         PremiumGate.isAvailable(.referenceFraming, status: subscription.status)
     }
+    /// The self-timer currently set, so the camera screen can say so rather
+    /// than surprising you with a countdown you configured days ago.
+    var captureTimer: CaptureTimer { settings.captureTimer }
+
+    /// Cycles the timer from the chip on the camera screen. It only appears
+    /// once a timer is set, so it never has to offer "off to 3s" — turning it
+    /// on is a settings decision, turning it off mid-shoot is not.
+    func cycleCaptureTimer() {
+        switch settings.captureTimer {
+        case .off: settings.captureTimer = .three
+        case .three: settings.captureTimer = .ten
+        case .ten: settings.captureTimer = .off
+        }
+        cancelCountdown()
+        signalSelection()
+        present(message: settings.captureTimer == .off
+            ? "Self-timer off"
+            : "Self-timer \(settings.captureTimer.title)")
+    }
+
     /// Says the unlock out loud. Locks quietly disappearing from the mode
     /// strip is easy to miss in the second after paying for them.
     func announceProUnlocked() {

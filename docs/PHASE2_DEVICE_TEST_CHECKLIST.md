@@ -219,6 +219,30 @@ or real products in App Store Connect.
 - Start a countdown and background the app; confirm no photo is taken.
 - Confirm Auto Capture still fires immediately and does not wait for the timer.
 
+### Exposure compensation
+
+- Tap to focus and confirm the sun slider appears beside the square, on the
+  side with room for it — check both near the right edge and near the left.
+- Drag it and confirm the preview brightens and darkens, that the chip in the
+  top bar tracks the value, and that the square stays up while you adjust.
+- Report the range the device actually accepts if it clamps before ±2 stops.
+- Confirm the correction survives the square fading, that tapping the chip
+  clears it, and that focusing somewhere new or switching cameras resets it.
+- Take a photo with a correction applied and confirm the saved file is
+  actually brighter or darker — not just the preview.
+
+### Self-timer chip
+
+- Set a timer in Settings and confirm the chip appears in the top bar.
+- Tap it and confirm it cycles 3s → 10s → off, and that Settings agrees
+  afterwards.
+
+### Dynamic Type
+
+- Set the system text size to the largest non-accessibility size, then to
+  accessibility sizes, and confirm Settings and the paywall stay readable and
+  nothing is clipped — particularly the plan rows and the renewal disclosure.
+
 ### Volume-button capture
 
 - Press either volume key and confirm a photo is taken (iOS 17.2 and later).

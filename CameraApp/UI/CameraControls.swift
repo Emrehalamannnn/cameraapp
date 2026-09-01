@@ -285,3 +285,42 @@ struct CountdownView: View {
             .accessibilityLabel(Text("\(seconds) seconds remaining"))
     }
 }
+
+// MARK: - HUD chips
+
+/// A small pill in the top bar for a setting that is currently doing something
+/// out of the ordinary — a self-timer, an exposure correction. It only appears
+/// while that is true, and tapping it deals with it, so the state is never
+/// something you have to go looking for.
+struct HUDChip: View {
+
+    var systemImage: String?
+    let text: String
+    var tint: Color = .white
+    var rotation: Angle = .zero
+    let accessibilityLabel: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                Text(text)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+            }
+            .foregroundStyle(tint)
+            .rotationEffect(rotation)
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background(Capsule().fill(.ultraThinMaterial))
+            .overlay {
+                Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
+            }
+        }
+        .buttonStyle(PressableButtonStyle(pressedScale: 0.94))
+        .accessibilityLabel(Text(accessibilityLabel))
+    }
+}

@@ -122,6 +122,16 @@ framing: flash, reference, Auto Capture, settings.
 Either volume key takes the photo (iOS 17.2+, via `AVCaptureEventInteraction`),
 which is how most people hold a phone one-handed.
 
+Tap to focus brings up an exposure slider beside the square. The correction
+outlives the square, so the top bar carries a `+0.7 EV` chip until it is
+cleared — and a chip for the self-timer whenever one is set, because a timer
+configured days ago should not be a surprise the next time the shutter is
+pressed. Both chips are tappable and both disappear when there is nothing to
+say.
+
+Settings and the paywall scale with Dynamic Type; the camera HUD does not,
+because control sizes there are about where your thumb lands.
+
 ## Before shipping
 
 Three things in this repository are placeholders and have to be replaced:

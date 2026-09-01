@@ -42,6 +42,10 @@ struct PaywallView: View {
             }
         }
         .preferredColorScheme(.dark)
+        // Prices, periods and the renewal disclosure all have to stay legible
+        // at larger text sizes — a paywall is the last place to fix type size
+        // in place. Capped, or the plan rows stop fitting a phone.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
         .task {
             service.clearMessage()
             await service.loadProducts()
@@ -91,11 +95,11 @@ struct PaywallView: View {
             .padding(.top, 8)
 
             Text("CameraApp Pro")
-                .font(.system(size: 30, weight: .bold, design: .rounded))
+                .font(.system(.title, design: .rounded).weight(.bold))
                 .foregroundStyle(.white)
 
             Text("A photographer in your pocket.")
-                .font(.system(size: 15))
+                .font(.system(.subheadline, design: .default))
                 .foregroundStyle(.white.opacity(0.62))
                 .padding(.bottom, 18)
         }
@@ -113,10 +117,10 @@ struct PaywallView: View {
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(feature.title)
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            .font(.system(.subheadline, design: .rounded).weight(.semibold))
                             .foregroundStyle(.white)
                         Text(feature.detail)
-                            .font(.system(size: 12.5))
+                            .font(.system(.caption, design: .default))
                             .foregroundStyle(.white.opacity(0.55))
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -157,7 +161,7 @@ struct PaywallView: View {
         VStack(spacing: 12) {
             if let message = service.message {
                 Text(message)
-                    .font(.system(size: 12.5))
+                    .font(.system(.caption, design: .default))
                     .foregroundStyle(.white.opacity(0.7))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -174,12 +178,12 @@ struct PaywallView: View {
                         ProgressView().tint(.black)
                     } else {
                         Text("Continue")
-                            .font(.system(size: 17, weight: .bold, design: .rounded))
+                            .font(.system(.headline, design: .rounded).weight(.bold))
                     }
                 }
                 .foregroundStyle(.black)
-                .frame(maxWidth: .infinity)
-                .frame(height: 52)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .padding(.vertical, 4)
                 .background(Capsule().fill(Color.readyAccent))
             }
             .buttonStyle(PressableButtonStyle(pressedScale: 0.97))
@@ -194,11 +198,11 @@ struct PaywallView: View {
                 Link("Terms", destination: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!)
                 Link("Privacy", destination: URL(string: "https://example.com/privacy")!)
             }
-            .font(.system(size: 12.5, weight: .medium))
+            .font(.system(.caption, design: .default).weight(.medium))
             .foregroundStyle(.white.opacity(0.5))
 
             Text("Subscriptions renew automatically until cancelled. Manage or cancel in Settings.")
-                .font(.system(size: 10.5))
+                .font(.system(.caption2, design: .default))
                 .foregroundStyle(.white.opacity(0.35))
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -234,7 +238,7 @@ private struct PlanRow: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 7) {
                         Text(offer.plan.title)
-                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .font(.system(.callout, design: .rounded).weight(.semibold))
                             .foregroundStyle(.white)
                         if let saving {
                             Text("SAVE \(saving)%")
@@ -250,14 +254,14 @@ private struct PlanRow: View {
                             ? "Billed every month"
                             : SubscriptionPricing.monthlyCaption(for: offer)
                     )
-                        .font(.system(size: 12))
+                        .font(.system(.caption, design: .default))
                         .foregroundStyle(.white.opacity(0.5))
                 }
 
                 Spacer(minLength: 0)
 
                 Text(offer.displayPrice)
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .font(.system(.headline, design: .rounded).weight(.bold))
                     .foregroundStyle(.white)
             }
             .padding(.horizontal, 16)

@@ -16,7 +16,7 @@ struct SettingsSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title.uppercased())
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .font(.system(.caption2, design: .rounded).weight(.semibold))
                 .tracking(0.8)
                 .foregroundStyle(.white.opacity(0.4))
                 .padding(.leading, 6)
@@ -90,17 +90,18 @@ struct SettingsToggleRow: View {
     private func content(trailing: AnyView) -> some View {
         HStack(spacing: 12) {
             Image(systemName: systemImage)
-                .font(.system(size: 14, weight: .medium))
+                .font(.system(.subheadline, design: .default).weight(.medium))
                 .foregroundStyle(.white.opacity(0.75))
                 .frame(width: 22)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.system(.subheadline, design: .default).weight(.medium))
                     .foregroundStyle(.white)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let detail {
                     Text(detail)
-                        .font(.system(size: 12))
+                        .font(.system(.caption, design: .default))
                         .foregroundStyle(.white.opacity(0.45))
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -130,11 +131,11 @@ struct SettingsChoiceRow<Option: Identifiable & Hashable>: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(.subheadline, design: .default).weight(.medium))
                     .foregroundStyle(.white.opacity(0.75))
                     .frame(width: 22)
                 Text(title)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.system(.subheadline, design: .default).weight(.medium))
                     .foregroundStyle(.white)
                 Spacer()
             }
@@ -152,7 +153,7 @@ struct SettingsChoiceRow<Option: Identifiable & Hashable>: View {
                         } label: {
                             HStack(spacing: 4) {
                                 Text(option[keyPath: label])
-                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .font(.system(.footnote, design: .rounded).weight(.semibold))
                                 if isLocked { ProBadge() }
                             }
                             .foregroundStyle(isSelected ? Color.black : Color.white.opacity(0.8))
@@ -178,7 +179,7 @@ struct SettingsChoiceRow<Option: Identifiable & Hashable>: View {
 
             if let detail {
                 Text(selection[keyPath: detail])
-                    .font(.system(size: 12))
+                    .font(.system(.caption, design: .default))
                     .foregroundStyle(.white.opacity(0.45))
                     .padding(.leading, 34)
                     .fixedSize(horizontal: false, vertical: true)
@@ -204,11 +205,11 @@ struct SettingsLinkRow: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(.subheadline, design: .default).weight(.medium))
                     .foregroundStyle(.white.opacity(0.75))
                     .frame(width: 22)
                 Text(title)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.system(.subheadline, design: .default).weight(.medium))
                     .foregroundStyle(.white)
                 Spacer()
                 Image(systemName: "arrow.up.right")
