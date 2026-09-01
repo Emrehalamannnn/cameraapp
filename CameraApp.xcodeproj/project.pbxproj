@@ -321,6 +321,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = CameraApp;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "CameraApp uses the camera to frame, guide and take your photos.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "CameraApp reads device motion to tell you when the camera is steady enough for a sharp photo.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "CameraApp saves the photos you keep to your photo library.";
@@ -334,11 +335,12 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.CameraApp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.emrehalaman.cameraapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
+				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Debug;
 		};
@@ -352,6 +354,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = CameraApp;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "CameraApp uses the camera to frame, guide and take your photos.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "CameraApp reads device motion to tell you when the camera is steady enough for a sharp photo.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "CameraApp saves the photos you keep to your photo library.";
@@ -365,11 +368,12 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.CameraApp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.emrehalaman.cameraapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
+				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Release;
 		};

@@ -1,0 +1,141 @@
+workflows:
+  ios-testflight:
+    name: CameraApp - TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+
+    integrations:
+      app_store_connect: cameraapp-app-store-connect
+
+    environment:
+      groups:
+        - cameraapp_testflight
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.emrehalaman.cameraapp
+      vars:
+        BUNDLE_ID: "com.emrehalaman.cameraapp"
+        XCODE_PROJECT: "CameraApp.xcodeproj"
+        XCODE_SCHEME: "CameraApp"
+      xcode: latest
+
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: "claude/ios-ai-camera-foundation-2umxr3"
+          include: true
+          source: true
+      cancel_previous_builds: true
+
+    scripts:
+      - name: Validate release configuration
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          case "${APP_STORE_APPLE_ID:-}" in
+            ""|*[!0-9]*)
+              echo "APP_STORE_APPLE_ID must be the numeric Apple ID from App Store Connect."
+              exit 1
+              ;;
+          esac
+
+          test -d "$CM_BUILD_DIR/$XCODE_PROJECT"
+          xcodebuild -list -project "$CM_BUILD_DIR/$XCODE_PROJECT"
+          python3 "$CM_BUILD_DIR/scripts/check-storekit-identifiers.py"
+
+          PROJECT_BUNDLE_ID=$(
+            xcodebuild \
+              -project "$CM_BUILD_DIR/$XCODE_PROJECT" \
+              -scheme "$XCODE_SCHEME" \
+              -configuration Release \
+              -showBuildSettings \
+              | awk '/PRODUCT_BUNDLE_IDENTIFIER =/ { print $3; exit }'
+          )
+
+          if [ "$PROJECT_BUNDLE_ID" != "$BUNDLE_ID" ]; then
+            echo "Release bundle ID is '$PROJECT_BUNDLE_ID'; expected '$BUNDLE_ID'."
+            exit 1
+          fi
+
+      - name: Run unit tests
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          mkdir -p "$CM_BUILD_DIR/build/logs" "$CM_BUILD_DIR/build/ios/test-results"
+
+          SIMULATOR_UDID=$(
+            xcrun simctl list devices available \
+              | grep "iPhone" \
+              | grep -oE "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}" \
+              | tail -1 \
+              || true
+          )
+
+          if [ -z "$SIMULATOR_UDID" ]; then
+            echo "No available iPhone simulator was found."
+            exit 1
+          fi
+
+          set -o pipefail
+          xcodebuild \
+            -project "$CM_BUILD_DIR/$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Debug \
+            -destination "id=$SIMULATOR_UDID" \
+            -resultBundlePath "$CM_BUILD_DIR/build/ios/test-results/CameraAppTests.xcresult" \
+            CODE_SIGNING_ALLOWED=NO \
+            test 2>&1 | tee "$CM_BUILD_DIR/build/logs/test.log"
+
+      - name: Set up App Store code signing
+        script: xcode-project use-profiles
+
+      - name: Set repeatable build number
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          LATEST_BUILD_NUMBER=$(
+            app-store-connect get-latest-build-number "$APP_STORE_APPLE_ID"
+          )
+
+          case "$LATEST_BUILD_NUMBER" in
+            ""|*[!0-9]*)
+              echo "Could not determine the latest App Store Connect build number."
+              exit 1
+              ;;
+          esac
+
+          NEXT_BUILD_NUMBER=$((LATEST_BUILD_NUMBER + 1))
+          if [ "$CM_BUILD_NUMBER" -gt "$NEXT_BUILD_NUMBER" ]; then
+            NEXT_BUILD_NUMBER="$CM_BUILD_NUMBER"
+          fi
+
+          cd "$CM_BUILD_DIR"
+          agvtool new-version -all "$NEXT_BUILD_NUMBER"
+          echo "APP_BUILD_NUMBER=$NEXT_BUILD_NUMBER" >> "$CM_ENV"
+          echo "Using build number $NEXT_BUILD_NUMBER"
+
+      - name: Build signed IPA
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          xcode-project build-ipa \
+            --project "$CM_BUILD_DIR/$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME"
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - build/ios/test-results/*.xcresult
+      - build/logs/*.log
+      - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        beta_groups:
+          - CameraApp Internal Testers
+        submit_to_app_store: false
