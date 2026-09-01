@@ -29,7 +29,7 @@ final class VideoFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBufferD
     let queue = DispatchQueue(label: "com.cameraapp.video-frames", qos: .userInitiated)
 
     private let analyzer: FrameAnalysisService
-    private let minimumInterval: CFTimeInterval
+    private var minimumInterval: CFTimeInterval
 
     private var lastDispatchTime: CFTimeInterval = 0
     private var isAnalyzing = false
@@ -46,6 +46,14 @@ final class VideoFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBufferD
     }
 
     // MARK: - Configuration (safe from any thread)
+
+    /// Changes how often frames are analysed. Higher feels more alive and
+    /// costs more battery; the preference lives in Settings.
+    func setAnalysesPerSecond(_ rate: Double) {
+        queue.async { [self] in
+            minimumInterval = rate > 0 ? 1.0 / rate : 0
+        }
+    }
 
     func setEnabled(_ enabled: Bool) {
         queue.async { [self] in

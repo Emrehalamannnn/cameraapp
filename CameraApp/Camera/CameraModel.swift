@@ -68,7 +68,7 @@ final class CameraModel {
     private(set) var configuration: CameraConfiguration = .unknown
     private(set) var selectedZoom: Double = 1
     private(set) var flashMode: FlashMode = .auto
-    private(set) var isGridVisible = true
+    var isGridVisible: Bool { settings.isGridVisible }
     private(set) var isCapturing = false
     private(set) var isSwitchingCamera = false
     private(set) var isSaving = false
@@ -78,9 +78,39 @@ final class CameraModel {
     private(set) var shutterFlashOpacity: Double = 0
     private(set) var message: String?
     private(set) var isPhotoAccessDenied = false
-    private(set) var isAutoCaptureEnabled = false
+    var isAutoCaptureEnabled: Bool {
+        settings.isAutoCaptureEnabled
+            && PremiumGate.isAvailable(.autoCapture, status: subscription.status)
+    }
+    /// Reference framing is Pro. Exposed so the control can go straight to the
+    /// paywall rather than opening a photo picker that leads nowhere.
+    var isReferenceFramingAvailable: Bool {
+        PremiumGate.isAvailable(.referenceFraming, status: subscription.status)
+    }
+    /// Whether the horizon hint may appear at all.
+    var isLevelIndicatorEnabled: Bool { settings.isLevelIndicatorEnabled }
+    /// Modes the current entitlement does not cover, so the selector can mark
+    /// them rather than letting a tap fail silently.
+    var lockedShootingModes: Set<ShootingMode> {
+        Set(ShootingMode.allCases.filter { !PremiumGate.isAvailable($0, status: subscription.status) })
+    }
     /// Takes a short burst and keeps the frame that scored best.
-    private(set) var isBestShotEnabled = false
+    var isBestShotEnabled: Bool {
+        settings.isBestShotEnabled
+            && PremiumGate.isAvailable(.bestShot, status: subscription.status)
+    }
+
+    /// Set when a locked feature is tapped, so the camera screen can offer the
+    /// upgrade rather than silently doing nothing.
+    private(set) var isPaywallPresented = false
+
+    func requestPaywall() {
+        isPaywallPresented = true
+    }
+
+    func dismissPaywall() {
+        isPaywallPresented = false
+    }
     /// The shortlist from a burst, best first. Empty for a single capture.
     private(set) var burstCandidates: [CapturedPhoto] = []
     private(set) var burstThumbnails: [UIImage?] = []
@@ -104,6 +134,9 @@ final class CameraModel {
     @ObservationIgnored private var guidanceEngine: GuidanceEngine
     @ObservationIgnored private var autoCaptureController: AutoCaptureController
     @ObservationIgnored private var readyShownAt: TimeInterval?
+    /// Preferences live outside the model: it reads them, it does not own them.
+    @ObservationIgnored let settings: CameraSettings
+    @ObservationIgnored let subscription: SubscriptionService
     @ObservationIgnored private var analysisTask: Task<Void, Never>?
     @ObservationIgnored private var observationTasks: [Task<Void, Never>] = []
     @ObservationIgnored private var messageTask: Task<Void, Never>?
@@ -115,11 +148,16 @@ final class CameraModel {
 
     var session: AVCaptureSession { captureService.session }
 
-    init(shootingMode: ShootingMode = .portrait) {
+    init(
+        settings: CameraSettings,
+        subscription: SubscriptionService,
+        shootingMode: ShootingMode = .portrait
+    ) {
+        self.settings = settings
+        self.subscription = subscription
         self.shootingMode = shootingMode
         let analysisConfiguration = shootingMode.configuration
         self.analysisConfiguration = analysisConfiguration
-        isGridVisible = shootingMode.prefersGrid
         let analysis = FrameAnalysisService(configuration: analysisConfiguration)
         analysisService = analysis
         captureService = CaptureService(analyzer: analysis)
@@ -149,6 +187,9 @@ final class CameraModel {
         do {
             let configuration = try await captureService.start()
             apply(configuration)
+            // Preferences are pushed once the session exists: resolution and
+            // frame rate are properties of a configured device, not of the app.
+            await applySettings()
             status = .running
             orientation.start()
             Haptics.shared.prepare()
@@ -180,6 +221,7 @@ final class CameraModel {
             do {
                 let configuration = try await captureService.start()
                 apply(configuration)
+                await applySettings()
                 await captureService.setAnalysisEnabled(!isReviewing)
                 await refreshRotationCoordinator()
             } catch {
@@ -213,24 +255,24 @@ final class CameraModel {
 
     func toggleFlashMode() {
         flashMode = flashMode.next
-        Haptics.shared.selectionSignal()
-    }
-
-    func toggleGrid() {
-        isGridVisible.toggle()
-        Haptics.shared.selectionSignal()
+        signalSelection()
     }
 
     func toggleAutoCapture() {
-        isAutoCaptureEnabled.toggle()
+        guard PremiumGate.isAvailable(.autoCapture, status: subscription.status) else {
+            requestPaywall()
+            return
+        }
+        settings.isAutoCaptureEnabled.toggle()
         resetAutoCapture()
-        Haptics.shared.selectionSignal()
+        signalSelection()
+        present(message: isAutoCaptureEnabled ? "Auto capture on" : "Auto capture off")
     }
 
     func switchCamera() {
         guard status.isRunning, !isSwitchingCamera, !isCapturing else { return }
         isSwitchingCamera = true
-        Haptics.shared.selectionSignal()
+        signalSelection()
         faces = []
         guidance = nil
         level = .unavailable
@@ -263,7 +305,7 @@ final class CameraModel {
         )
         guard abs(clamped - selectedZoom) > 0.001 || ramp else { return }
         selectedZoom = clamped
-        if feedback { Haptics.shared.selectionSignal() }
+        if feedback { signalSelection() }
 
         Task {
             let applied = await captureService.applyZoom(displayFactor: clamped, ramp: ramp)
@@ -289,7 +331,7 @@ final class CameraModel {
 
         let indicator = FocusIndicator(point: point)
         focusIndicator = indicator
-        Haptics.shared.selectionSignal()
+        signalSelection()
         suppressAutoCaptureForSettling()
 
         Task { await captureService.focus(at: devicePoint, isUserInitiated: true) }
@@ -435,7 +477,9 @@ final class CameraModel {
             readyShownAt = update.state?.isReady == true ? now : nil
         }
         if update.didBecomeReady {
-            Haptics.shared.readySignal()
+            if settings.isHapticsEnabled {
+                Haptics.shared.readySignal()
+            }
         }
         updateReadySettled(now: now)
 
@@ -483,11 +527,15 @@ final class CameraModel {
 
     /// Enhances on first use, then toggles between the two versions.
     func toggleEnhancement() {
+        guard PremiumGate.isAvailable(.enhancement, status: subscription.status) else {
+            requestPaywall()
+            return
+        }
         guard let review, !isEnhancing else { return }
 
         if enhancedReview != nil {
             isShowingEnhanced.toggle()
-            Haptics.shared.selectionSignal()
+            signalSelection()
             return
         }
 
@@ -501,7 +549,7 @@ final class CameraModel {
             let image = await enhanced.makePreviewImage(maxDimension: 2200)
             enhancedReview = PhotoReview(photo: enhanced, image: image)
             isShowingEnhanced = true
-            Haptics.shared.selectionSignal()
+            signalSelection()
         }
     }
 
@@ -536,6 +584,10 @@ final class CameraModel {
     /// The image arrives from the system picker, so the app never gains access
     /// to the photo library, and the analysis happens on device.
     func setReference(imageData: Data) async {
+        guard PremiumGate.isAvailable(.referenceFraming, status: subscription.status) else {
+            requestPaywall()
+            return
+        }
         let framing = await Task.detached(priority: .userInitiated) { () -> ReferenceFraming in
             guard let source = CGImageSourceCreateWithData(imageData as CFData, nil),
                   let image = CGImageSourceCreateThumbnailAtIndex(
@@ -567,7 +619,7 @@ final class CameraModel {
         referenceFraming = nil
         guidanceEngine = GuidanceEngine(configuration: analysisConfiguration)
         resetAutoCapture(requiresReadyExit: true)
-        Haptics.shared.selectionSignal()
+        signalSelection()
         Task { await analysisService.setCompositionTarget(.neutral) }
         present(message: "Reference cleared")
     }
@@ -575,8 +627,12 @@ final class CameraModel {
     // MARK: - Best shot
 
     func toggleBestShot() {
-        isBestShotEnabled.toggle()
-        Haptics.shared.selectionSignal()
+        guard PremiumGate.isAvailable(.bestShot, status: subscription.status) else {
+            requestPaywall()
+            return
+        }
+        settings.isBestShotEnabled.toggle()
+        signalSelection()
         present(message: isBestShotEnabled ? "Best shot on" : "Best shot off")
     }
 
@@ -615,13 +671,42 @@ final class CameraModel {
         // Enhancement belongs to the frame it was computed from.
         enhancedReview = nil
         isShowingEnhanced = false
-        Haptics.shared.selectionSignal()
+        signalSelection()
 
         let photo = burstCandidates[index]
         Task {
             let image = await photo.makePreviewImage(maxDimension: 2200)
             guard selectedCandidate == index else { return }
             review = PhotoReview(photo: photo, image: image)
+        }
+    }
+
+    // MARK: - Feedback
+
+    /// All selection feedback goes through here so the haptics preference is
+    /// honoured in one place rather than at sixteen call sites.
+    private func signalSelection() {
+        guard settings.isHapticsEnabled else { return }
+        signalSelection()
+    }
+
+    // MARK: - Settings
+
+    /// Pushes preferences that the capture session has to be told about.
+    /// Called at start-up and whenever the settings sheet closes.
+    func applySettings() async {
+        let isPro = subscription.isPro
+        await captureService.applyCaptureSettings(
+            resolution: isPro ? settings.photoResolution : .standard,
+            frameRate: settings.previewFrameRate,
+            mirrorFrontPhotos: settings.mirrorFrontPhotos
+        )
+        await captureService.setAnalysisRate(settings.responsiveness.analysesPerSecond)
+
+        // A lapsed subscription must leave a working camera, not a broken one.
+        if !PremiumGate.isAvailable(shootingMode, status: subscription.status),
+           shootingMode != PremiumGate.fallbackMode {
+            setShootingModeUnchecked(PremiumGate.fallbackMode)
         }
     }
 
@@ -632,11 +717,20 @@ final class CameraModel {
     /// branch scattered through the analysis code.
     func setShootingMode(_ mode: ShootingMode) {
         guard mode != shootingMode else { return }
+        guard PremiumGate.isAvailable(mode, status: subscription.status) else {
+            requestPaywall()
+            return
+        }
+        setShootingModeUnchecked(mode)
+    }
+
+    /// The mode change itself, with the entitlement check already made. Used
+    /// directly when dropping back to a free mode after a subscription lapses.
+    private func setShootingModeUnchecked(_ mode: ShootingMode) {
         shootingMode = mode
         analysisConfiguration = mode.configuration
         guidanceEngine = GuidanceEngine(configuration: analysisConfiguration)
         autoCaptureController = AutoCaptureController(configuration: analysisConfiguration)
-        isGridVisible = mode.prefersGrid
 
         guidance = nil
         composition = .noSubject
@@ -644,7 +738,7 @@ final class CameraModel {
         isReadySettled = false
         readyShownAt = nil
         resetAutoCapture(requiresReadyExit: true)
-        Haptics.shared.selectionSignal()
+        signalSelection()
 
         Task {
             await analysisService.setMode(mode)
@@ -666,7 +760,7 @@ final class CameraModel {
     func toggleDebugOverlay() {
         #if DEBUG
         isDebugOverlayVisible.toggle()
-        Haptics.shared.selectionSignal()
+        signalSelection()
         #endif
     }
 

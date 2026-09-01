@@ -202,6 +202,9 @@ struct ModeSelector: View {
     let modes: [ShootingMode]
     let selected: ShootingMode
     let rotation: Angle
+    /// Modes the current subscription does not cover. They stay tappable — the
+    /// tap opens the paywall — but they are marked, so nothing looks broken.
+    var lockedModes: Set<ShootingMode> = []
     let onSelect: (ShootingMode) -> Void
 
     var body: some View {
@@ -209,19 +212,32 @@ struct ModeSelector: View {
             HStack(spacing: 18) {
                 ForEach(modes) { mode in
                     let isActive = mode == selected
+                    let isLocked = lockedModes.contains(mode)
                     Button {
                         onSelect(mode)
                     } label: {
-                        Text(mode.shortTitle)
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
-                            .tracking(0.6)
-                            .foregroundStyle(isActive ? Color.yellow : Color.white.opacity(0.65))
-                            .rotationEffect(rotation)
-                            .padding(.vertical, 6)
-                            .contentShape(Rectangle())
+                        HStack(spacing: 3) {
+                            if isLocked {
+                                Image(systemName: "lock.fill")
+                                    .font(.system(size: 8, weight: .bold))
+                            }
+                            Text(mode.shortTitle)
+                                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                .tracking(0.6)
+                        }
+                        .foregroundStyle(
+                            isActive
+                                ? Color.yellow
+                                : Color.white.opacity(isLocked ? 0.4 : 0.65)
+                        )
+                        .rotationEffect(rotation)
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(PressableButtonStyle(pressedScale: 0.94))
-                    .accessibilityLabel(Text("\(mode.title) mode"))
+                    .accessibilityLabel(
+                        Text(isLocked ? "\(mode.title) mode, Pro" : "\(mode.title) mode")
+                    )
                     .accessibilityAddTraits(isActive ? [.isSelected] : [])
                 }
             }

@@ -88,14 +88,6 @@ enum ShootingMode: String, CaseIterable, Identifiable, Sendable {
         self == .outfit
     }
 
-    /// Modes where a grid genuinely helps are switched on by default.
-    var prefersGrid: Bool {
-        switch self {
-        case .food, .product, .landscape: return true
-        case .portrait, .outfit, .night, .story: return false
-        }
-    }
-
     /// The calibration this mode shoots with.
     var configuration: AnalysisConfiguration {
         var configuration = AnalysisConfiguration.standard

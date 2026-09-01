@@ -12,14 +12,17 @@ import SwiftUI
 struct CameraView: View {
 
     let model: CameraModel
+    /// The camera screen does not own the settings sheet; it only asks for it.
+    var onOpenSettings: () -> Void = {}
 
     /// Size of the preview surface itself — measured after safe areas are
     /// ignored, so it matches the AVCaptureVideoPreviewLayer's own bounds.
     @State private var previewSize: CGSize = .zero
-    @State private var referenceItem: PhotosPickerItem?
+    @State private var referenceItem: PhotosPickerItem? = nil
 
-    init(model: CameraModel) {
+    init(model: CameraModel, onOpenSettings: @escaping () -> Void = {}) {
         self.model = model
+        self.onOpenSettings = onOpenSettings
     }
 
     var body: some View {
@@ -98,7 +101,7 @@ struct CameraView: View {
                     .opacity(model.isReadySettled ? 0 : 1)
                     .animation(.easeInOut(duration: 0.45), value: model.isReadySettled)
 
-                if model.guidance?.message == .straightenCamera {
+                if model.isLevelIndicatorEnabled, model.guidance?.message == .straightenCamera {
                     LevelIndicatorView(
                         rollDegrees: model.level.rollDegrees,
                         rotation: model.orientation.controlRotation
@@ -208,17 +211,6 @@ struct CameraView: View {
             referenceControl
 
             GlassCircleButton(
-                systemImage: model.isBestShotEnabled ? "square.stack.fill" : "square.stack",
-                accessibilityLabel: model.isBestShotEnabled
-                    ? "Disable Best Shot"
-                    : "Enable Best Shot",
-                isHighlighted: model.isBestShotEnabled,
-                rotation: model.orientation.controlRotation
-            ) {
-                model.toggleBestShot()
-            }
-
-            GlassCircleButton(
                 systemImage: "timer",
                 accessibilityLabel: model.isAutoCaptureEnabled
                     ? "Disable Auto Capture"
@@ -229,25 +221,48 @@ struct CameraView: View {
                 model.toggleAutoCapture()
             }
 
+            // Everything else — the grid, Best Shot, resolution, the
+            // subscription — lives behind this one button. The camera screen
+            // stays a camera screen.
             #if DEBUG
             // A long press opens the calibration overlay. Debug builds only —
             // in Release this branch does not exist at all.
-            gridButton.simultaneousGesture(
+            settingsButton.simultaneousGesture(
                 LongPressGesture(minimumDuration: 0.8).onEnded { _ in
                     model.toggleDebugOverlay()
                 }
             )
             #else
-            gridButton
+            settingsButton
             #endif
         }
+    }
+
+    private var settingsButton: some View {
+        GlassCircleButton(
+            systemImage: "slider.horizontal.3",
+            accessibilityLabel: "Settings",
+            rotation: model.orientation.controlRotation,
+            action: onOpenSettings
+        )
     }
 
     /// Reference framing. Picking goes through the system photo picker, which
     /// hands over one image without the app ever gaining library access.
     @ViewBuilder
     private var referenceControl: some View {
-        if model.isMatchingReference {
+        if !model.isReferenceFramingAvailable {
+            // Opening the picker only to refuse the photo afterwards wastes the
+            // customer's time and looks broken. Say it up front instead.
+            GlassCircleButton(
+                systemImage: "photo.on.rectangle",
+                accessibilityLabel: "Match a reference photo, Pro",
+                rotation: model.orientation.controlRotation
+            ) {
+                model.requestPaywall()
+            }
+            .opacity(0.55)
+        } else if model.isMatchingReference {
             GlassCircleButton(
                 systemImage: "photo.fill.on.rectangle.fill",
                 accessibilityLabel: "Clear reference framing",
@@ -268,23 +283,13 @@ struct CameraView: View {
         }
     }
 
-    private var gridButton: some View {
-        GlassCircleButton(
-            systemImage: "grid",
-            accessibilityLabel: model.isGridVisible ? "Hide grid" : "Show grid",
-            isHighlighted: model.isGridVisible,
-            rotation: model.orientation.controlRotation
-        ) {
-            model.toggleGrid()
-        }
-    }
-
     private var bottomControls: some View {
         VStack(spacing: 14) {
             ModeSelector(
                 modes: ShootingMode.allCases,
                 selected: model.shootingMode,
                 rotation: model.orientation.controlRotation,
+                lockedModes: model.lockedShootingModes,
                 onSelect: { model.setShootingMode($0) }
             )
 

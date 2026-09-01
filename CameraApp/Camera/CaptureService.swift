@@ -30,6 +30,8 @@ actor CaptureService {
     private var isConfigured = false
     private var zoomCapabilities: ZoomCapabilities = .unity
     private var captureRotationAngle: CGFloat = 90
+    private var photoResolution: PhotoResolution = .standard
+    private var mirrorFrontPhotos = false
 
     init(analyzer: FrameAnalysisService) {
         frameProcessor = VideoFrameProcessor(analyzer: analyzer)
@@ -145,9 +147,60 @@ actor CaptureService {
         connection.isVideoMirrored = false
     }
 
+    /// Applies the preferences the session itself has to be told about.
+    func applyCaptureSettings(
+        resolution: PhotoResolution,
+        frameRate: PreviewFrameRate,
+        mirrorFrontPhotos: Bool
+    ) {
+        photoResolution = resolution
+        self.mirrorFrontPhotos = mirrorFrontPhotos
+        guard let device = currentDevice else { return }
+
+        session.beginConfiguration()
+        applyPhotoOutputSettings(for: device)
+        session.commitConfiguration()
+
+        applyFrameRate(frameRate, to: device)
+        applyPhotoMirroring()
+    }
+
+    func setAnalysisRate(_ analysesPerSecond: Double) {
+        frameProcessor.setAnalysesPerSecond(analysesPerSecond)
+    }
+
+    /// Locks the capture frame rate, when the active format can do it.
+    private func applyFrameRate(_ rate: PreviewFrameRate, to device: AVCaptureDevice) {
+        let target = Double(rate.rawValue)
+        let supported = device.activeFormat.videoSupportedFrameRateRanges.contains {
+            $0.minFrameRate <= target && target <= $0.maxFrameRate
+        }
+        guard supported else { return }
+
+        let duration = CMTime(value: 1, timescale: CMTimeScale(rate.rawValue))
+        do {
+            try device.lockForConfiguration()
+            defer { device.unlockForConfiguration() }
+            device.activeVideoMinFrameDuration = duration
+            device.activeVideoMaxFrameDuration = duration
+        } catch {
+            // Frame rate is a preference, not a requirement.
+        }
+    }
+
+    /// Whether selfies are saved the way the preview shows them. Off by
+    /// default, matching the system camera.
+    private func applyPhotoMirroring() {
+        guard let connection = photoOutput.connection(with: .video),
+              connection.isVideoMirroringSupported else { return }
+        let isFront = currentDevice?.position == .front
+        connection.automaticallyAdjustsVideoMirroring = false
+        connection.isVideoMirrored = mirrorFrontPhotos && isFront
+    }
+
     private func applyPhotoOutputSettings(for device: AVCaptureDevice) {
         photoOutput.maxPhotoQualityPrioritization = .quality
-        if let dimensions = DeviceLookup.maximumPhotoDimensions(for: device) {
+        if let dimensions = preferredPhotoDimensions(for: device) {
             photoOutput.maxPhotoDimensions = dimensions
         }
         // Deferred delivery hands back a low-quality proxy first and finishes
@@ -174,6 +227,17 @@ actor CaptureService {
         } catch {
             // A device that refuses configuration still previews fine with its
             // defaults, so this is not fatal.
+        }
+    }
+
+    /// Maximum uses everything the format can give; standard stays at the
+    /// sensor's native output, which is faster to capture and to save.
+    private func preferredPhotoDimensions(for device: AVCaptureDevice) -> CMVideoDimensions? {
+        switch photoResolution {
+        case .maximum:
+            return DeviceLookup.maximumPhotoDimensions(for: device)
+        case .standard:
+            return CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
         }
     }
 
@@ -225,6 +289,7 @@ actor CaptureService {
         applyZoom(displayFactor: 1, ramp: false)
         frameProcessor.updateSource(device: device, isMirrored: device.position == .front)
         applyCaptureRotationAngle()
+        applyPhotoMirroring()
 
         return makeConfiguration()
     }
