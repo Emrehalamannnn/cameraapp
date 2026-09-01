@@ -131,6 +131,9 @@ struct CompositionAssessment: Sendable, Equatable {
     var edgeClearance: Double
     /// Mean confidence of the faces used to form the assessment.
     var detectionConfidence: Float
+    /// Mean Vision face-capture quality, `0...1`, when it was measured.
+    /// `nil` in scene modes and when no face is in shot.
+    var faceCaptureQuality: Float?
 
     static let noSubject = CompositionAssessment(
         state: .noSubject,

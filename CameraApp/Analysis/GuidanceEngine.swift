@@ -27,6 +27,7 @@ enum GuidanceMessage: String, Sendable, Equatable, CaseIterable {
     case reframeSubject = "Keep subject in frame"
     case straightenCamera = "Straighten camera"
     case fitWholeBody = "Fit the whole body"
+    case almostReady = "Almost — hold it"
     case ready = "Ready"
 
     var isReady: Bool { self == .ready }
@@ -46,6 +47,7 @@ enum GuidanceMessage: String, Sendable, Equatable, CaseIterable {
         case .stepBack: return .back
         case .moveCloser: return .closer
         case .fitWholeBody: return .back
+        case .almostReady: return .none
         case .moreLight, .tooMuchLight, .holdStill, .reframeSubject,
              .straightenCamera, .ready:
             return .none
@@ -151,6 +153,14 @@ struct GuidanceEngine {
 
         if !analysis.level.isAcceptable {
             return .straightenCamera
+        }
+
+        // Everything is composed and level, but the subject is not camera-ready
+        // — a blink, a word half-spoken. Said last, because a tilt is something
+        // the photographer can fix and a blink is something they wait out.
+        if let captureQuality = analysis.composition.faceCaptureQuality,
+           captureQuality < configuration.minimumFaceCaptureQuality {
+            return .almostReady
         }
 
         if !analysis.quality.isReady {

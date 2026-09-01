@@ -65,6 +65,7 @@ struct GuidanceBanner: View {
         case .reframeSubject: return "viewfinder"
         case .straightenCamera: return "rotate.left"
         case .fitWholeBody: return "figure.stand"
+        case .almostReady: return "ellipsis"
         }
     }
 }

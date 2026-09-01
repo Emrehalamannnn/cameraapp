@@ -71,6 +71,15 @@ enum ShotQualityModel {
             hasCorrection = true
         }
 
+        // Framing can be perfect while the subject is mid-blink. This is what
+        // stops Auto Capture taking the photo nobody wants, and it is why the
+        // manual shutter deliberately ignores it.
+        if let captureQuality = composition.faceCaptureQuality,
+           captureQuality < configuration.minimumFaceCaptureQuality {
+            score -= 18
+            hasCorrection = true
+        }
+
         score = min(max(score, 0), 100)
         let severity: ShotQualitySeverity = hasCriticalFailure
             ? .critical

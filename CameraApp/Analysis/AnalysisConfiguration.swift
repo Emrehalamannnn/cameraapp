@@ -50,6 +50,10 @@ struct AnalysisConfiguration: Sendable, Equatable {
     /// Frames taken when Best Shot is on. Three covers a blink without making
     /// the shutter feel slow.
     var burstFrameCount: Int = 3
+    /// Vision face-capture quality below which the subject is not camera-ready
+    /// — mid-blink, mid-word, or the face itself blurred. Gates Ready, and so
+    /// gates Auto Capture, but never blocks the manual shutter.
+    var minimumFaceCaptureQuality: Float = 0.35
 
     static let standard = AnalysisConfiguration()
 }

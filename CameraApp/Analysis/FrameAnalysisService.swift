@@ -119,8 +119,9 @@ actor FrameAnalysisService {
             frameDelta: frameDelta,
             configuration: configuration
         )
-        let faces = detectFaces(in: pixelBuffer, orientation: context.orientation)
-        let composition = CompositionEvaluator.evaluate(
+        let detection = detectFaces(in: pixelBuffer, orientation: context.orientation)
+        let faces = detection.faces
+        var composition = CompositionEvaluator.evaluate(
             faces: faces,
             isMirrored: context.isMirrored,
             previous: previousComposition,
@@ -139,6 +140,7 @@ actor FrameAnalysisService {
             previous: previousLevel,
             configuration: configuration
         )
+        composition.faceCaptureQuality = detection.quality
         let quality = ShotQualityModel.evaluate(
             lighting: lighting,
             stability: stability,
@@ -167,10 +169,41 @@ actor FrameAnalysisService {
 
     // MARK: - Vision
 
+    /// Scores how camera-ready the faces are: eyes open, not mid-blink, face
+    /// not smeared.
+    ///
+    /// Vision's own capture-quality model answers this far better than an
+    /// eye-aspect-ratio heuristic would, and feeding it the rectangles we
+    /// already have means the frame is not analysed twice.
+    private func faceCaptureQuality(
+        for observations: [VNFaceObservation],
+        in pixelBuffer: CVPixelBuffer,
+        orientation: CGImagePropertyOrientation
+    ) -> Float? {
+        guard subjectPolicy == .face, !observations.isEmpty else { return nil }
+
+        let request = VNDetectFaceCaptureQualityRequest()
+        request.inputFaceObservations = observations
+        let handler = VNImageRequestHandler(
+            cvPixelBuffer: pixelBuffer,
+            orientation: orientation,
+            options: [:]
+        )
+        do {
+            try handler.perform([request])
+        } catch {
+            return nil
+        }
+        let qualities = (request.results ?? []).compactMap(\.faceCaptureQuality)
+        guard !qualities.isEmpty else { return nil }
+        // The weakest face decides: one person blinking spoils a group photo.
+        return qualities.min()
+    }
+
     private func detectFaces(
         in pixelBuffer: CVPixelBuffer,
         orientation: CGImagePropertyOrientation
-    ) -> [DetectedFace] {
+    ) -> (faces: [DetectedFace], quality: Float?) {
         let handler = VNImageRequestHandler(
             cvPixelBuffer: pixelBuffer,
             orientation: orientation,
@@ -179,12 +212,17 @@ actor FrameAnalysisService {
         do {
             try handler.perform([faceRequest])
         } catch {
-            return []
+            return ([], nil)
         }
 
         let observations = faceRequest.results ?? []
+        let quality = faceCaptureQuality(
+            for: observations,
+            in: pixelBuffer,
+            orientation: orientation
+        )
         // Largest first: the guidance layer treats face 0 as the subject.
-        return observations
+        let faces = observations
             .sorted { $0.boundingBox.height > $1.boundingBox.height }
             .enumerated()
             .map { index, observation in
@@ -196,5 +234,6 @@ actor FrameAnalysisService {
                     confidence: observation.confidence
                 )
             }
+        return (faces, quality)
     }
 }

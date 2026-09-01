@@ -288,3 +288,65 @@ final class BodyPoseRulesTests: XCTestCase {
         }
     }
 }
+
+final class FaceCaptureQualityGatingTests: XCTestCase {
+
+    private let configuration = AnalysisConfiguration.standard
+
+    /// The whole point: framing can be perfect while the subject is mid-blink,
+    /// and Auto Capture must not take that photo.
+    func testBlinkingSubjectIsNotReadyDespitePerfectFraming() {
+        let assessment = ShotQualityModel.evaluate(
+            lighting: LightingAssessment(quality: .good, exposureValue: 10, meanLuma: 0.5),
+            stability: StabilityAssessment(level: .steady, motionScore: 0),
+            faces: [face()],
+            composition: composition(captureQuality: 0.05),
+            level: LevelAssessment(state: .level, rollDegrees: 0),
+            configuration: configuration
+        )
+        XCTAssertFalse(assessment.isReady, "A blink must block Ready")
+        XCTAssertEqual(assessment.severity, .correctable, "But it is not a critical failure")
+    }
+
+    func testCameraReadySubjectWithGoodFramingIsReady() {
+        let assessment = ShotQualityModel.evaluate(
+            lighting: LightingAssessment(quality: .good, exposureValue: 10, meanLuma: 0.5),
+            stability: StabilityAssessment(level: .steady, motionScore: 0),
+            faces: [face()],
+            composition: composition(captureQuality: 0.9),
+            level: LevelAssessment(state: .level, rollDegrees: 0),
+            configuration: configuration
+        )
+        XCTAssertTrue(assessment.isReady)
+    }
+
+    func testUnmeasuredQualityDoesNotBlockReady() {
+        // Scene modes never measure it, and a missing measurement must not be
+        // treated as a bad one.
+        let assessment = ShotQualityModel.evaluate(
+            lighting: LightingAssessment(quality: .good, exposureValue: 10, meanLuma: 0.5),
+            stability: StabilityAssessment(level: .steady, motionScore: 0),
+            faces: [],
+            composition: CompositionAssessment.noSubject,
+            level: LevelAssessment(state: .level, rollDegrees: 0),
+            configuration: configuration
+        )
+        XCTAssertTrue(assessment.isReady)
+    }
+
+    private func face() -> DetectedFace {
+        DetectedFace(
+            id: 0,
+            boundingBox: CGRect(x: 0.35, y: 0.35, width: 0.3, height: 0.3),
+            roll: nil,
+            yaw: nil,
+            confidence: 1
+        )
+    }
+
+    private func composition(captureQuality: Float) -> CompositionAssessment {
+        var assessment = CompositionEvaluator.evaluate(faces: [face()], isMirrored: false)
+        assessment.faceCaptureQuality = captureQuality
+        return assessment
+    }
+}
