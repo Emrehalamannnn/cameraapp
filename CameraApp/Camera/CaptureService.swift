@@ -237,7 +237,7 @@ actor CaptureService {
         case .maximum:
             return DeviceLookup.maximumPhotoDimensions(for: device)
         case .standard:
-            return CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
+            return DeviceLookup.nativePhotoDimensions(for: device)
         }
     }
 

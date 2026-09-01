@@ -88,4 +88,17 @@ enum DeviceLookup {
             Int($0.width) * Int($0.height) < Int($1.width) * Int($1.height)
         }
     }
+
+    /// The smallest still-image size the active format offers: the sensor's
+    /// own output, before any of the larger settings that cost time to
+    /// capture and to save.
+    ///
+    /// Chosen from the supported list rather than computed from the format,
+    /// because `maxPhotoDimensions` throws if handed a size the format does
+    /// not actually advertise.
+    static func nativePhotoDimensions(for device: AVCaptureDevice) -> CMVideoDimensions? {
+        device.activeFormat.supportedMaxPhotoDimensions.min {
+            Int($0.width) * Int($0.height) < Int($1.width) * Int($1.height)
+        }
+    }
 }

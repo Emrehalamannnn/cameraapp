@@ -51,6 +51,28 @@ enum PreviewFrameRate: Int, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// A delay between pressing the shutter and taking the photo, for when the
+/// person pressing it needs to be in the picture.
+enum CaptureTimer: Int, CaseIterable, Identifiable, Sendable {
+    case off = 0
+    case three = 3
+    case ten = 10
+
+    var id: Int { rawValue }
+
+    var title: String {
+        self == .off ? "Off" : "\(rawValue)s"
+    }
+
+    var detail: String {
+        switch self {
+        case .off: return "The shutter fires as you press it"
+        case .three: return "Long enough to steady the phone"
+        case .ten: return "Long enough to walk into the shot"
+        }
+    }
+}
+
 /// How often the guidance re-reads the scene. Faster feels more alive and
 /// costs more battery; slower is calmer and cheaper.
 enum GuidanceResponsiveness: String, CaseIterable, Identifiable, Sendable {
@@ -95,10 +117,12 @@ final class CameraSettings {
         static let previewFrameRate = "settings.previewFrameRate"
         static let responsiveness = "settings.guidanceResponsiveness"
         static let grid = "settings.gridVisible"
+        static let compositionGuide = "settings.compositionGuide"
         static let levelIndicator = "settings.levelIndicator"
         static let haptics = "settings.haptics"
         static let bestShot = "settings.bestShot"
         static let autoCapture = "settings.autoCapture"
+        static let captureTimer = "settings.captureTimer"
         static let mirrorFront = "settings.mirrorFrontPhotos"
         static let hasSeenPaywall = "settings.hasSeenPaywall"
     }
@@ -108,11 +132,12 @@ final class CameraSettings {
     @ObservationIgnored private var storedPhotoResolution: PhotoResolution
     @ObservationIgnored private var storedPreviewFrameRate: PreviewFrameRate
     @ObservationIgnored private var storedResponsiveness: GuidanceResponsiveness
-    @ObservationIgnored private var storedIsGridVisible: Bool
+    @ObservationIgnored private var storedCompositionGuide: CompositionGuide
     @ObservationIgnored private var storedIsLevelIndicatorEnabled: Bool
     @ObservationIgnored private var storedIsHapticsEnabled: Bool
     @ObservationIgnored private var storedIsBestShotEnabled: Bool
     @ObservationIgnored private var storedIsAutoCaptureEnabled: Bool
+    @ObservationIgnored private var storedCaptureTimer: CaptureTimer
     @ObservationIgnored private var storedMirrorFrontPhotos: Bool
     @ObservationIgnored private var storedHasSeenPaywall: Bool
 
@@ -140,11 +165,11 @@ final class CameraSettings {
         }
     }
 
-    var isGridVisible: Bool {
-        get { access(keyPath: \.isGridVisible); return storedIsGridVisible }
+    var compositionGuide: CompositionGuide {
+        get { access(keyPath: \.compositionGuide); return storedCompositionGuide }
         set {
-            withMutation(keyPath: \.isGridVisible) { storedIsGridVisible = newValue }
-            defaults.set(newValue, forKey: Key.grid)
+            withMutation(keyPath: \.compositionGuide) { storedCompositionGuide = newValue }
+            defaults.set(newValue.rawValue, forKey: Key.compositionGuide)
         }
     }
 
@@ -181,6 +206,14 @@ final class CameraSettings {
         }
     }
 
+    var captureTimer: CaptureTimer {
+        get { access(keyPath: \.captureTimer); return storedCaptureTimer }
+        set {
+            withMutation(keyPath: \.captureTimer) { storedCaptureTimer = newValue }
+            defaults.set(newValue.rawValue, forKey: Key.captureTimer)
+        }
+    }
+
     /// Whether front-camera photos are saved mirrored, matching the preview.
     /// Off by default, which is what the system camera does.
     var mirrorFrontPhotos: Bool {
@@ -212,12 +245,29 @@ final class CameraSettings {
         storedResponsiveness = GuidanceResponsiveness(
             rawValue: defaults.string(forKey: Key.responsiveness) ?? ""
         ) ?? .balanced
-        storedIsGridVisible = defaults.object(forKey: Key.grid) as? Bool ?? true
+        storedCompositionGuide = CameraSettings.storedGuide(in: defaults)
         storedIsLevelIndicatorEnabled = defaults.object(forKey: Key.levelIndicator) as? Bool ?? true
         storedIsHapticsEnabled = defaults.object(forKey: Key.haptics) as? Bool ?? true
         storedIsBestShotEnabled = defaults.object(forKey: Key.bestShot) as? Bool ?? false
         storedIsAutoCaptureEnabled = defaults.object(forKey: Key.autoCapture) as? Bool ?? false
+        storedCaptureTimer = CaptureTimer(
+            rawValue: defaults.integer(forKey: Key.captureTimer)
+        ) ?? .off
         storedMirrorFrontPhotos = defaults.object(forKey: Key.mirrorFront) as? Bool ?? false
         storedHasSeenPaywall = defaults.object(forKey: Key.hasSeenPaywall) as? Bool ?? false
+    }
+
+    /// The guide was a plain on/off grid in an earlier build. Someone who had
+    /// turned it off should not find it back on after an update, so the old
+    /// key is read once when the new one is absent.
+    private static func storedGuide(in defaults: UserDefaults) -> CompositionGuide {
+        if let raw = defaults.string(forKey: Key.compositionGuide),
+           let guide = CompositionGuide(rawValue: raw) {
+            return guide
+        }
+        if let wasVisible = defaults.object(forKey: Key.grid) as? Bool {
+            return wasVisible ? .thirds : .off
+        }
+        return .thirds
     }
 }

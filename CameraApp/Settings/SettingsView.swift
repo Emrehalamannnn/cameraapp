@@ -212,14 +212,26 @@ struct SettingsView: View {
 
     private var guidanceSection: some View {
         SettingsSection(title: "Guidance") {
-            SettingsToggleRow(
-                title: "Composition grid",
-                detail: nil,
+            SettingsChoiceRow(
+                title: "Composition guide",
                 systemImage: "grid",
-                isOn: Binding(
-                    get: { settings.isGridVisible },
-                    set: { settings.isGridVisible = $0 }
-                )
+                options: CompositionGuide.allCases,
+                selection: Binding(
+                    get: { settings.compositionGuide },
+                    set: { newValue in
+                        guard CompositionGuide.free.contains(newValue) || subscription.isPro else {
+                            isShowingPaywall = true
+                            return
+                        }
+                        settings.compositionGuide = newValue
+                    }
+                ),
+                label: \.title,
+                detail: \.detail,
+                lockedOptions: subscription.isPro
+                    ? []
+                    : Set(CompositionGuide.allCases.map(\.id))
+                        .subtracting(CompositionGuide.free.map(\.id))
             )
             SettingsDivider()
             SettingsToggleRow(
@@ -258,6 +270,18 @@ struct SettingsView: View {
 
     private var captureSection: some View {
         SettingsSection(title: "Capture") {
+            SettingsChoiceRow(
+                title: "Self-timer",
+                systemImage: "clock",
+                options: CaptureTimer.allCases,
+                selection: Binding(
+                    get: { settings.captureTimer },
+                    set: { settings.captureTimer = $0 }
+                ),
+                label: \.title,
+                detail: \.detail
+            )
+            SettingsDivider()
             SettingsToggleRow(
                 title: "Auto Capture",
                 detail: "Take the photo itself once the shot is right",

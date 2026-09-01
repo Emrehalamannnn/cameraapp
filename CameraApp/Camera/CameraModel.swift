@@ -68,7 +68,15 @@ final class CameraModel {
     private(set) var configuration: CameraConfiguration = .unknown
     private(set) var selectedZoom: Double = 1
     private(set) var flashMode: FlashMode = .auto
-    var isGridVisible: Bool { settings.isGridVisible }
+    /// The guide drawn over the preview. A Pro guide left selected after a
+    /// subscription lapses shows as thirds rather than disappearing.
+    var compositionGuide: CompositionGuide {
+        let selected = settings.compositionGuide
+        guard CompositionGuide.free.contains(selected) else {
+            return subscription.isPro ? selected : CompositionGuide.fallback
+        }
+        return selected
+    }
     private(set) var isCapturing = false
     private(set) var isSwitchingCamera = false
     private(set) var isSaving = false
@@ -116,6 +124,8 @@ final class CameraModel {
     private(set) var burstThumbnails: [UIImage?] = []
     private(set) var selectedCandidate = 0
     private(set) var autoCaptureProgress: Double = 0
+    /// Seconds left on the self-timer, or nil when it is not running.
+    private(set) var countdownRemaining: Int?
 
     var isReviewing: Bool { review != nil }
 
@@ -134,6 +144,7 @@ final class CameraModel {
     @ObservationIgnored private var guidanceEngine: GuidanceEngine
     @ObservationIgnored private var autoCaptureController: AutoCaptureController
     @ObservationIgnored private var readyShownAt: TimeInterval?
+    @ObservationIgnored private var countdownTask: Task<Void, Never>?
     /// Preferences live outside the model: it reads them, it does not own them.
     @ObservationIgnored let settings: CameraSettings
     @ObservationIgnored let subscription: SubscriptionService
@@ -237,6 +248,8 @@ final class CameraModel {
     func suspend() async {
         isForegrounded = false
         resetAutoCapture(requiresReadyExit: true)
+        // A timer that kept running would fire the shutter at a pocket.
+        cancelCountdown()
         orientation.stop()
         // The analysis consumer is deliberately left running: an AsyncStream is
         // single-shot, and cancelling its consumer would tear the pipeline down
@@ -348,7 +361,47 @@ final class CameraModel {
 
     func capturePhoto() {
         resetAutoCapture(requiresReadyExit: true)
-        performCapture()
+
+        // A second press during the countdown cancels it. Anything else would
+        // mean the only way out is to wait for a photo you no longer want.
+        if countdownTask != nil {
+            cancelCountdown()
+            present(message: "Timer cancelled")
+            return
+        }
+
+        let seconds = settings.captureTimer.rawValue
+        guard seconds > 0 else {
+            performCapture()
+            return
+        }
+        startCountdown(from: seconds)
+    }
+
+    /// The self-timer. Auto Capture deliberately does not go through here: it
+    /// already waits for the right moment, and waiting twice would miss it.
+    private func startCountdown(from seconds: Int) {
+        guard status.isRunning, !isCapturing, !isReviewing else { return }
+        countdownRemaining = seconds
+        signalSelection()
+
+        countdownTask = Task { [weak self] in
+            for remaining in stride(from: seconds - 1, through: 0, by: -1) {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled, let self else { return }
+                self.countdownRemaining = remaining > 0 ? remaining : nil
+                if remaining > 0 { self.signalSelection() }
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.countdownTask = nil
+            self.performCapture()
+        }
+    }
+
+    private func cancelCountdown() {
+        countdownTask?.cancel()
+        countdownTask = nil
+        countdownRemaining = nil
     }
 
     private func performCapture() {

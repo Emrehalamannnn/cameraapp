@@ -162,11 +162,12 @@ final class CameraSettingsTests: XCTestCase {
         XCTAssertEqual(settings.photoResolution, .standard)
         XCTAssertEqual(settings.previewFrameRate, .thirty)
         XCTAssertEqual(settings.responsiveness, .balanced)
-        XCTAssertTrue(settings.isGridVisible)
+        XCTAssertEqual(settings.compositionGuide, .thirds)
         XCTAssertTrue(settings.isLevelIndicatorEnabled)
         XCTAssertTrue(settings.isHapticsEnabled)
         XCTAssertFalse(settings.isAutoCaptureEnabled)
         XCTAssertFalse(settings.isBestShotEnabled)
+        XCTAssertEqual(settings.captureTimer, .off)
         XCTAssertFalse(settings.mirrorFrontPhotos)
         XCTAssertFalse(settings.hasSeenPaywall)
     }
@@ -177,11 +178,12 @@ final class CameraSettingsTests: XCTestCase {
         first.photoResolution = .maximum
         first.previewFrameRate = .sixty
         first.responsiveness = .responsive
-        first.isGridVisible = false
+        first.compositionGuide = .square
         first.isLevelIndicatorEnabled = false
         first.isHapticsEnabled = false
         first.isAutoCaptureEnabled = true
         first.isBestShotEnabled = true
+        first.captureTimer = .ten
         first.mirrorFrontPhotos = true
         first.hasSeenPaywall = true
 
@@ -189,11 +191,12 @@ final class CameraSettingsTests: XCTestCase {
         XCTAssertEqual(second.photoResolution, .maximum)
         XCTAssertEqual(second.previewFrameRate, .sixty)
         XCTAssertEqual(second.responsiveness, .responsive)
-        XCTAssertFalse(second.isGridVisible)
+        XCTAssertEqual(second.compositionGuide, .square)
         XCTAssertFalse(second.isLevelIndicatorEnabled)
         XCTAssertFalse(second.isHapticsEnabled)
         XCTAssertTrue(second.isAutoCaptureEnabled)
         XCTAssertTrue(second.isBestShotEnabled)
+        XCTAssertEqual(second.captureTimer, .ten)
         XCTAssertTrue(second.mirrorFrontPhotos)
         XCTAssertTrue(second.hasSeenPaywall)
     }
@@ -204,8 +207,40 @@ final class CameraSettingsTests: XCTestCase {
         // default again.
         let defaults = makeDefaults()
         let first = CameraSettings(defaults: defaults)
-        first.isGridVisible = false
-        XCTAssertFalse(CameraSettings(defaults: defaults).isGridVisible)
+        first.isLevelIndicatorEnabled = false
+        XCTAssertFalse(CameraSettings(defaults: defaults).isLevelIndicatorEnabled)
+    }
+
+    // MARK: - Composition guide
+
+    func testTurningTheOldGridOffSurvivesTheUpgradeToGuides() {
+        // The grid used to be a boolean. Someone who had switched it off must
+        // not be handed it back by an update.
+        let defaults = makeDefaults()
+        defaults.set(false, forKey: CameraSettings.Key.grid)
+        XCTAssertEqual(CameraSettings(defaults: defaults).compositionGuide, .off)
+    }
+
+    func testTheOldGridBeingOnBecomesThirds() {
+        let defaults = makeDefaults()
+        defaults.set(true, forKey: CameraSettings.Key.grid)
+        XCTAssertEqual(CameraSettings(defaults: defaults).compositionGuide, .thirds)
+    }
+
+    func testAChosenGuideWinsOverTheOldGridSetting() {
+        let defaults = makeDefaults()
+        defaults.set(false, forKey: CameraSettings.Key.grid)
+        defaults.set(CompositionGuide.goldenRatio.rawValue, forKey: CameraSettings.Key.compositionGuide)
+        XCTAssertEqual(CameraSettings(defaults: defaults).compositionGuide, .goldenRatio)
+    }
+
+    func testTheOrdinaryGridIsFree() {
+        // Charging for thirds would be charging for what every camera has.
+        XCTAssertTrue(CompositionGuide.free.contains(.thirds))
+        XCTAssertTrue(CompositionGuide.free.contains(.off))
+        XCTAssertTrue(CompositionGuide.free.contains(CompositionGuide.fallback))
+        XCTAssertFalse(CompositionGuide.free.contains(.goldenRatio))
+        XCTAssertFalse(CompositionGuide.free.contains(.square))
     }
 
     func testUnreadableStoredValuesFallBackInsteadOfCrashing() {
@@ -214,11 +249,21 @@ final class CameraSettingsTests: XCTestCase {
         defaults.set("ultra", forKey: CameraSettings.Key.photoResolution)
         defaults.set(999, forKey: CameraSettings.Key.previewFrameRate)
         defaults.set("frantic", forKey: CameraSettings.Key.responsiveness)
+        defaults.set(7, forKey: CameraSettings.Key.captureTimer)
 
         let settings = CameraSettings(defaults: defaults)
         XCTAssertEqual(settings.photoResolution, .standard)
         XCTAssertEqual(settings.previewFrameRate, .thirty)
         XCTAssertEqual(settings.responsiveness, .balanced)
+        XCTAssertEqual(settings.captureTimer, .off)
+    }
+
+    func testTheSelfTimerIsOffUntilItIsAskedFor() {
+        // A camera that silently counts down before every photo would be
+        // baffling, so nothing but an explicit choice turns this on.
+        XCTAssertEqual(CaptureTimer.off.rawValue, 0)
+        XCTAssertTrue(CaptureTimer.allCases.contains(.off))
+        XCTAssertTrue(CaptureTimer.allCases.allSatisfy { $0.rawValue >= 0 })
     }
 
     func testResponsivenessMapsToADistinctAnalysisRate() {

@@ -267,3 +267,21 @@ struct MessageToast: View {
             .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
 }
+
+// MARK: - Self-timer
+
+/// The seconds left, large enough to read from across a room — which is where
+/// the person who set the timer usually is.
+struct CountdownView: View {
+
+    let seconds: Int
+
+    var body: some View {
+        Text("\(seconds)")
+            .font(.system(size: 120, weight: .thin, design: .rounded))
+            .foregroundStyle(.white)
+            .shadow(color: .black.opacity(0.4), radius: 12)
+            .contentTransition(.numericText(countsDown: true))
+            .accessibilityLabel(Text("\(seconds) seconds remaining"))
+    }
+}

@@ -105,8 +105,14 @@ enum SubscriptionPricing {
         let candidate = monthlyEquivalent(of: offer)
         guard baseline > 0, candidate < baseline else { return nil }
 
-        let ratio = (baseline - candidate) / baseline * 100
-        let percentage = Int(truncating: NSDecimalNumber(decimal: ratio))
+        // Rounded to a whole number *as a Decimal* before it becomes an Int.
+        // A division like this leaves a 38-digit mantissa, and converting one
+        // of those to an integer directly does not survive the trip — which is
+        // how a "Save 90%" badge ends up showing something else entirely.
+        var ratio = (baseline - candidate) / baseline * 100
+        var whole = Decimal()
+        NSDecimalRound(&whole, &ratio, 0, .down)
+        let percentage = (whole as NSDecimalNumber).intValue
         return percentage > 0 ? percentage : nil
     }
 

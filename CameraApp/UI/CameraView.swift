@@ -88,6 +88,12 @@ struct CameraView: View {
                 .opacity(model.shutterFlashOpacity)
                 .allowsHitTesting(false)
 
+            if let remaining = model.countdownRemaining {
+                CountdownView(seconds: remaining)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+
             VStack(spacing: 0) {
                 topBar
                     .padding(.horizontal, 20)
@@ -123,6 +129,7 @@ struct CameraView: View {
             }
             .animation(.easeInOut(duration: 0.2), value: model.message)
         }
+        .animation(.easeOut(duration: 0.15), value: model.countdownRemaining)
     }
 
     private var previewSurface: some View {
@@ -136,10 +143,9 @@ struct CameraView: View {
                 .opacity(model.isSwitchingCamera ? 0 : 1)
                 .animation(.easeInOut(duration: 0.18), value: model.isSwitchingCamera)
 
-            if model.isGridVisible {
-                RuleOfThirdsGrid()
-                    .transition(.opacity)
-            }
+            CompositionGuideOverlay(guide: model.compositionGuide)
+                .transition(.opacity)
+                .id(model.compositionGuide)
 
             SubjectOverlay(
                 faces: model.faces,
@@ -188,7 +194,7 @@ struct CameraView: View {
                 .onChanged { value in model.updatePinchZoom(scale: value.magnification) }
                 .onEnded { _ in model.endPinchZoom() }
         )
-        .animation(.easeInOut(duration: 0.2), value: model.isGridVisible)
+        .animation(.easeInOut(duration: 0.2), value: model.compositionGuide)
     }
 
     // MARK: - Controls

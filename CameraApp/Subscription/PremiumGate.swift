@@ -22,6 +22,7 @@ enum PremiumFeature: String, CaseIterable, Sendable {
     case bestShot
     case referenceFraming
     case enhancement
+    case compositionGuides
     case maximumResolution
 
     var title: String {
@@ -31,6 +32,7 @@ enum PremiumFeature: String, CaseIterable, Sendable {
         case .bestShot: return "Best Shot"
         case .referenceFraming: return "Reference framing"
         case .enhancement: return "One-tap enhance"
+        case .compositionGuides: return "Composition guides"
         case .maximumResolution: return "Full resolution capture"
         }
     }
@@ -47,6 +49,8 @@ enum PremiumFeature: String, CaseIterable, Sendable {
             return "Point at a photo you like and get guided to the same composition."
         case .enhancement:
             return "A conservative clean-up that still looks like your photograph."
+        case .compositionGuides:
+            return "Golden-ratio lines and a live square-crop frame, on top of the usual grid."
         case .maximumResolution:
             return "Capture at the highest resolution your camera supports."
         }
@@ -59,6 +63,7 @@ enum PremiumFeature: String, CaseIterable, Sendable {
         case .bestShot: return "square.stack"
         case .referenceFraming: return "photo.on.rectangle"
         case .enhancement: return "wand.and.stars"
+        case .compositionGuides: return "grid"
         case .maximumResolution: return "arrow.up.left.and.arrow.down.right"
         }
     }
