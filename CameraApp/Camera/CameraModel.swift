@@ -383,7 +383,7 @@ final class CameraModel {
         suppressAutoCaptureForSettling()
         // Metering somewhere new starts from what the meter says, not from a
         // correction that was aimed at the last subject.
-        setExposureBias(0)
+        if exposureBias != 0 { setExposureBias(0) }
 
         Task { await captureService.focus(at: devicePoint, isUserInitiated: true) }
         holdFocusIndicator(indicator, seconds: 1.2)

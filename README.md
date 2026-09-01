@@ -144,6 +144,10 @@ one is a local convenience:
   group, or `Product.products(for:)` returns nothing and the paywall stays on
   its fallback prices.
 * The privacy URL in `PaywallView` points at `example.com`.
+* The app icon is drawn in code (`scripts/make-app-icon.py`) — the focus
+  brackets and centre dot the guidance uses, in the same accent green. It is a
+  real icon rather than a blank placeholder, but it is geometry, not a
+  designed mark, and it should be replaced by one.
 * `StoreKit/CameraApp.storekit` is wired into the scheme's Run action and
   mirrors those identifiers, so purchase, restore, expiry and refund can be
   exercised locally. Its product IDs have to be changed in step with
