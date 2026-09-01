@@ -21,6 +21,7 @@ struct SettingsView: View {
     /// camera screen: every route into it from this sheet wants to come
     /// straight back to the row that was tapped.
     @State private var isShowingPaywall = false
+    @State private var isShowingResetConfirmation = false
 
     var body: some View {
         ZStack {
@@ -47,6 +48,18 @@ struct SettingsView: View {
         .dynamicTypeSize(...DynamicTypeSize.accessibility2)
         .sheet(isPresented: $isShowingPaywall) {
             PaywallView(service: subscription) { isShowingPaywall = false }
+        }
+        .confirmationDialog(
+            "Reset camera settings?",
+            isPresented: $isShowingResetConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Reset settings", role: .destructive) {
+                settings.resetCameraPreferences()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Camera, guidance and capture preferences return to their defaults. Your subscription is not affected.")
         }
     }
 
@@ -350,6 +363,25 @@ struct SettingsView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
+
+            SettingsDivider()
+
+            Button {
+                isShowingResetConfirmation = true
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.system(.subheadline, design: .default).weight(.semibold))
+                        .frame(width: 22)
+                    Text("Reset camera settings")
+                        .font(.system(.subheadline, design: .default).weight(.medium))
+                    Spacer()
+                }
+                .foregroundStyle(.red.opacity(0.9))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+            }
+            .buttonStyle(.plain)
         }
     }
 }

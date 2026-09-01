@@ -226,6 +226,77 @@ final class CameraSettingsTests: XCTestCase {
         XCTAssertFalse(settings.hasSeenPaywall)
     }
 
+    func testNamedDefaultsMatchAFirstLaunch() {
+        let settings = CameraSettings(defaults: makeDefaults())
+        let values = CameraSettings.defaultValues
+
+        XCTAssertEqual(settings.photoResolution, values.photoResolution)
+        XCTAssertEqual(settings.previewFrameRate, values.previewFrameRate)
+        XCTAssertEqual(settings.responsiveness, values.responsiveness)
+        XCTAssertEqual(settings.compositionGuide, values.compositionGuide)
+        XCTAssertEqual(settings.isLevelIndicatorEnabled, values.isLevelIndicatorEnabled)
+        XCTAssertEqual(settings.isHapticsEnabled, values.isHapticsEnabled)
+        XCTAssertEqual(settings.isAutoCaptureEnabled, values.isAutoCaptureEnabled)
+        XCTAssertEqual(settings.isBestShotEnabled, values.isBestShotEnabled)
+        XCTAssertEqual(settings.captureTimer, values.captureTimer)
+        XCTAssertEqual(settings.mirrorFrontPhotos, values.mirrorFrontPhotos)
+        XCTAssertEqual(settings.hasSeenPaywall, values.hasSeenPaywall)
+    }
+
+    func testResetRestoresCameraPreferencesButKeepsPaywallHistory() {
+        let defaults = makeDefaults()
+        let settings = CameraSettings(defaults: defaults)
+
+        settings.photoResolution = .maximum
+        settings.previewFrameRate = .sixty
+        settings.responsiveness = .responsive
+        settings.compositionGuide = .square
+        settings.isLevelIndicatorEnabled = false
+        settings.isHapticsEnabled = false
+        settings.isAutoCaptureEnabled = true
+        settings.isBestShotEnabled = true
+        settings.captureTimer = .ten
+        settings.mirrorFrontPhotos = true
+        settings.hasSeenPaywall = true
+
+        settings.resetCameraPreferences()
+        let values = CameraSettings.defaultValues
+
+        XCTAssertEqual(settings.photoResolution, values.photoResolution)
+        XCTAssertEqual(settings.previewFrameRate, values.previewFrameRate)
+        XCTAssertEqual(settings.responsiveness, values.responsiveness)
+        XCTAssertEqual(settings.compositionGuide, values.compositionGuide)
+        XCTAssertEqual(settings.isLevelIndicatorEnabled, values.isLevelIndicatorEnabled)
+        XCTAssertEqual(settings.isHapticsEnabled, values.isHapticsEnabled)
+        XCTAssertEqual(settings.isAutoCaptureEnabled, values.isAutoCaptureEnabled)
+        XCTAssertEqual(settings.isBestShotEnabled, values.isBestShotEnabled)
+        XCTAssertEqual(settings.captureTimer, values.captureTimer)
+        XCTAssertEqual(settings.mirrorFrontPhotos, values.mirrorFrontPhotos)
+        XCTAssertTrue(settings.hasSeenPaywall)
+    }
+
+    func testResetPersistsAcrossRelaunch() {
+        let defaults = makeDefaults()
+        let first = CameraSettings(defaults: defaults)
+        first.photoResolution = .maximum
+        first.previewFrameRate = .sixty
+        first.compositionGuide = .square
+        first.isAutoCaptureEnabled = true
+        first.captureTimer = .ten
+        first.hasSeenPaywall = true
+
+        first.resetCameraPreferences()
+
+        let second = CameraSettings(defaults: defaults)
+        let values = CameraSettings.defaultValues
+        XCTAssertEqual(second.photoResolution, values.photoResolution)
+        XCTAssertEqual(second.previewFrameRate, values.previewFrameRate)
+        XCTAssertEqual(second.compositionGuide, values.compositionGuide)
+        XCTAssertEqual(second.isAutoCaptureEnabled, values.isAutoCaptureEnabled)
+        XCTAssertEqual(second.captureTimer, values.captureTimer)
+        XCTAssertTrue(second.hasSeenPaywall)
+    }
+
     func testEveryPreferenceSurvivesARelaunch() {
         let defaults = makeDefaults()
         let first = CameraSettings(defaults: defaults)

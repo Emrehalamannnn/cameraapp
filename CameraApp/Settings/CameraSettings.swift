@@ -127,6 +127,35 @@ final class CameraSettings {
         static let hasSeenPaywall = "settings.hasSeenPaywall"
     }
 
+    /// One named table for the defaults used by both first launch and reset.
+    struct DefaultValues: Equatable, Sendable {
+        let photoResolution: PhotoResolution
+        let previewFrameRate: PreviewFrameRate
+        let responsiveness: GuidanceResponsiveness
+        let compositionGuide: CompositionGuide
+        let isLevelIndicatorEnabled: Bool
+        let isHapticsEnabled: Bool
+        let isBestShotEnabled: Bool
+        let isAutoCaptureEnabled: Bool
+        let captureTimer: CaptureTimer
+        let mirrorFrontPhotos: Bool
+        let hasSeenPaywall: Bool
+    }
+
+    static let defaultValues = DefaultValues(
+        photoResolution: .standard,
+        previewFrameRate: .thirty,
+        responsiveness: .balanced,
+        compositionGuide: .thirds,
+        isLevelIndicatorEnabled: true,
+        isHapticsEnabled: true,
+        isBestShotEnabled: false,
+        isAutoCaptureEnabled: false,
+        captureTimer: .off,
+        mirrorFrontPhotos: false,
+        hasSeenPaywall: false
+    )
+
     @ObservationIgnored private let defaults: UserDefaults
 
     @ObservationIgnored private var storedPhotoResolution: PhotoResolution
@@ -236,31 +265,61 @@ final class CameraSettings {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        let initial = Self.defaultValues
         storedPhotoResolution = PhotoResolution(
             rawValue: defaults.string(forKey: Key.photoResolution) ?? ""
-        ) ?? .standard
+        ) ?? initial.photoResolution
         storedPreviewFrameRate = PreviewFrameRate(
             rawValue: defaults.integer(forKey: Key.previewFrameRate)
-        ) ?? .thirty
+        ) ?? initial.previewFrameRate
         storedResponsiveness = GuidanceResponsiveness(
             rawValue: defaults.string(forKey: Key.responsiveness) ?? ""
-        ) ?? .balanced
-        storedCompositionGuide = CameraSettings.storedGuide(in: defaults)
-        storedIsLevelIndicatorEnabled = defaults.object(forKey: Key.levelIndicator) as? Bool ?? true
-        storedIsHapticsEnabled = defaults.object(forKey: Key.haptics) as? Bool ?? true
-        storedIsBestShotEnabled = defaults.object(forKey: Key.bestShot) as? Bool ?? false
-        storedIsAutoCaptureEnabled = defaults.object(forKey: Key.autoCapture) as? Bool ?? false
+        ) ?? initial.responsiveness
+        storedCompositionGuide = CameraSettings.storedGuide(
+            in: defaults,
+            fallback: initial.compositionGuide
+        )
+        storedIsLevelIndicatorEnabled = defaults.object(forKey: Key.levelIndicator) as? Bool
+            ?? initial.isLevelIndicatorEnabled
+        storedIsHapticsEnabled = defaults.object(forKey: Key.haptics) as? Bool
+            ?? initial.isHapticsEnabled
+        storedIsBestShotEnabled = defaults.object(forKey: Key.bestShot) as? Bool
+            ?? initial.isBestShotEnabled
+        storedIsAutoCaptureEnabled = defaults.object(forKey: Key.autoCapture) as? Bool
+            ?? initial.isAutoCaptureEnabled
         storedCaptureTimer = CaptureTimer(
             rawValue: defaults.integer(forKey: Key.captureTimer)
-        ) ?? .off
-        storedMirrorFrontPhotos = defaults.object(forKey: Key.mirrorFront) as? Bool ?? false
-        storedHasSeenPaywall = defaults.object(forKey: Key.hasSeenPaywall) as? Bool ?? false
+        ) ?? initial.captureTimer
+        storedMirrorFrontPhotos = defaults.object(forKey: Key.mirrorFront) as? Bool
+            ?? initial.mirrorFrontPhotos
+        storedHasSeenPaywall = defaults.object(forKey: Key.hasSeenPaywall) as? Bool
+            ?? initial.hasSeenPaywall
+    }
+
+    /// Restores camera, guidance and capture preferences to first-run values.
+    /// Subscription state and paywall history are deliberately preserved.
+    func resetCameraPreferences() {
+        let values = Self.defaultValues
+        photoResolution = values.photoResolution
+        previewFrameRate = values.previewFrameRate
+        responsiveness = values.responsiveness
+        compositionGuide = values.compositionGuide
+        isLevelIndicatorEnabled = values.isLevelIndicatorEnabled
+        isHapticsEnabled = values.isHapticsEnabled
+        isBestShotEnabled = values.isBestShotEnabled
+        isAutoCaptureEnabled = values.isAutoCaptureEnabled
+        captureTimer = values.captureTimer
+        mirrorFrontPhotos = values.mirrorFrontPhotos
+        defaults.removeObject(forKey: Key.grid)
     }
 
     /// The guide was a plain on/off grid in an earlier build. Someone who had
     /// turned it off should not find it back on after an update, so the old
     /// key is read once when the new one is absent.
-    private static func storedGuide(in defaults: UserDefaults) -> CompositionGuide {
+    private static func storedGuide(
+        in defaults: UserDefaults,
+        fallback: CompositionGuide
+    ) -> CompositionGuide {
         if let raw = defaults.string(forKey: Key.compositionGuide),
            let guide = CompositionGuide(rawValue: raw) {
             return guide
@@ -268,6 +327,6 @@ final class CameraSettings {
         if let wasVisible = defaults.object(forKey: Key.grid) as? Bool {
             return wasVisible ? .thirds : .off
         }
-        return .thirds
+        return fallback
     }
 }
