@@ -2,23 +2,15 @@
 //  DebugPremiumOverride.swift
 //  CameraApp
 //
-//  Lets a developer's own installed build carry Pro without a purchase, so
-//  the app can be exercised end to end without buying a subscription on every
-//  test device.
+//  A local, on-device Pro override. Compiled into every configuration,
+//  Release included, so it survives into TestFlight and App Store builds.
 //
-//  The entire file is compiled only into Debug builds: `DEBUG` is defined by
-//  `SWIFT_ACTIVE_COMPILATION_CONDITIONS` on the Debug configuration alone, so
-//  an Archive or a TestFlight/App Store Release build — which always builds
-//  Release — does not contain this type at all. There is no runtime check to
-//  disable, misconfigure, or bypass; the code is simply absent.
+//  Production entitlement is still computed first: `SubscriptionService.
+//  refreshEntitlement()` reads real status from `Transaction.currentEntitlements`
+//  before this is ever consulted, and a verified purchase or its absence is
+//  never overwritten by anything else in this file — this only ever adds Pro
+//  on top, never removes it.
 //
-//  Production entitlement is untouched: `SubscriptionService.refreshEntitlement()`
-//  still computes real status from `Transaction.currentEntitlements` first,
-//  and only *then*, in Debug, may override the result. A real customer's
-//  verified transactions remain the only thing that can grant Pro.
-//
-
-#if DEBUG
 
 import Foundation
 
@@ -31,5 +23,3 @@ enum DebugPremiumOverride {
         set { UserDefaults.standard.set(newValue, forKey: key) }
     }
 }
-
-#endif

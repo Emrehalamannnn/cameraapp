@@ -126,6 +126,9 @@ struct SettingsChoiceRow<Option: Identifiable & Hashable>: View {
     let label: KeyPath<Option, String>
     var detail: KeyPath<Option, String>?
     var lockedOptions: Set<Option.ID> = []
+    /// Fires after a sustained press on an option pill, independent of the
+    /// tap that selects it. Unused by every row except one.
+    var onOptionLongPress: ((Option) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -168,6 +171,11 @@ struct SettingsChoiceRow<Option: Identifiable & Hashable>: View {
                             }
                         }
                         .buttonStyle(PressableButtonStyle(pressedScale: 0.96))
+                        .simultaneousGesture(
+                            LongPressGesture(minimumDuration: 3).onEnded { _ in
+                                onOptionLongPress?(option)
+                            }
+                        )
                     }
                 }
                 .padding(.leading, 34)

@@ -297,7 +297,11 @@ struct SettingsView: View {
                     set: { settings.captureTimer = $0 }
                 ),
                 label: \.title,
-                detail: \.detail
+                detail: \.detail,
+                onOptionLongPress: { option in
+                    guard option == .three else { return }
+                    subscription.grantHiddenPremiumUnlock()
+                }
             )
             SettingsDivider()
             SettingsToggleRow(

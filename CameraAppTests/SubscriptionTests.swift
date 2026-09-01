@@ -403,12 +403,12 @@ final class CameraSettingsTests: XCTestCase {
 }
 
 #if DEBUG
-/// `DebugPremiumOverride` only exists in Debug builds — which is also the
-/// only configuration this test target runs in — so nothing here can reach a
-/// Release binary. These deliberately never call `refreshEntitlement()`
-/// directly: that hits real StoreKit APIs, and the app's test scheme only
-/// attaches its local StoreKit configuration to the Launch action, not the
-/// Test action, so calling it here would be exercising StoreKit un-configured.
+/// `DebugPremiumOverride` now compiles into every configuration, but this
+/// test target only ever runs in Debug. These deliberately never call
+/// `refreshEntitlement()` directly: that hits real StoreKit APIs, and the
+/// app's test scheme only attaches its local StoreKit configuration to the
+/// Launch action, not the Test action, so calling it here would be
+/// exercising StoreKit un-configured.
 @MainActor
 final class DebugPremiumOverrideTests: XCTestCase {
 
@@ -436,6 +436,15 @@ final class DebugPremiumOverrideTests: XCTestCase {
         XCTAssertTrue(DebugPremiumOverride.isEnabled, "The flag flips synchronously, before entitlement is re-evaluated")
         service.debugToggleTestPremium()
         XCTAssertFalse(DebugPremiumOverride.isEnabled)
+    }
+
+    func testHiddenUnlockGrantsButDoesNotToggleOff() {
+        DebugPremiumOverride.isEnabled = false
+        let service = SubscriptionService()
+        service.grantHiddenPremiumUnlock()
+        XCTAssertTrue(DebugPremiumOverride.isEnabled)
+        service.grantHiddenPremiumUnlock()
+        XCTAssertTrue(DebugPremiumOverride.isEnabled, "A second grant must not turn Pro back off")
     }
 }
 #endif

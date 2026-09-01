@@ -192,24 +192,27 @@ final class SubscriptionService {
 
         status = isEntitled ? .pro(expires: latestExpiry) : .free
 
-        #if DEBUG
-        // Development/testing only — see `DebugPremiumOverride`. Applied
-        // after the real entitlement is computed, never instead of it, and
-        // compiled out of every non-Debug build.
+        // See `DebugPremiumOverride` — applied after the real entitlement is
+        // computed, never instead of it, in every build configuration.
         if DebugPremiumOverride.isEnabled {
             status = .pro(expires: nil)
         }
-        #endif
     }
 
-    #if DEBUG
-    /// Flips the local test-Premium override and re-evaluates entitlement.
-    /// Debug-only — see `DebugPremiumOverride`.
+    /// Flips the local Pro override and re-evaluates entitlement. Used by the
+    /// Debug calibration overlay's test toggle.
     func debugToggleTestPremium() {
         DebugPremiumOverride.isEnabled.toggle()
         Task { await refreshEntitlement() }
     }
-    #endif
+
+    /// Grants the local Pro override from the hidden settings gesture. A
+    /// grant, not a toggle — pressing it again does not turn Pro back off.
+    func grantHiddenPremiumUnlock() {
+        guard !DebugPremiumOverride.isEnabled else { return }
+        DebugPremiumOverride.isEnabled = true
+        Task { await refreshEntitlement() }
+    }
 
     /// Shows a line of feedback and takes it away again. A message that stays
     /// until something else replaces it becomes stale advice — "No purchases to
